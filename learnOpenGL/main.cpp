@@ -56,16 +56,20 @@ int main()
     Shader shader(SHADER_DIR"vertex.glsl", SHADER_DIR"complexFragment.glsl");
     shaderPtr = &shader;
     shader.use();
+
     int width, height;
     glfwGetFramebufferSize(window,&width,&height);
     shader.setVec2("resolution", float(width),float(height));
+
+    Shader axisShader(SHADER_DIR"vertex.glsl", SHADER_DIR"fragment.glsl");
+    
 
     int sector = 100;
     int stack = 100;
     float radius = 2.5f;
     
     int vertexCount;
-    float* vertices = Shapes::sphereVertices(sector, stack,radius,vertexCount);
+    float* vertices = Shapes::sphereVertices(sector, stack, radius,vertexCount);
     int indicesCount;
     unsigned int* indices = Shapes::sphereIndices(sector,stack,indicesCount);
     
@@ -89,7 +93,7 @@ int main()
 
 
     //VAO 2 axis
-    glLineWidth(5.0f);
+    glLineWidth(4.0f);
 
     unsigned int VBO2, VAO2, EBO2;
     glGenVertexArrays(1, &VAO2);
@@ -136,6 +140,10 @@ int main()
     shader.use();
     shader.setMat4("projection", projection);
     shader.setMat4("view", view);
+
+    axisShader.use();
+    axisShader.setMat4("projection", projection);
+    axisShader.setMat4("view", view);
     
     
 
@@ -163,6 +171,7 @@ int main()
         
         
         
+        
         //transformMat4 for Sphere
         glBindVertexArray(VAO1);
 
@@ -173,9 +182,15 @@ int main()
         glDrawElements(GL_TRIANGLES,indicesCount, GL_UNSIGNED_INT, 0); //the amount of vertices drawn starts at cero finishes at n
 
 
-        
+       //shader for axis
+
+
+
+        axisShader.use();
+        axisShader.setMat4("view", view);
+        axisShader.setMat4("projection", projection);
         glBindVertexArray(VAO2);
-        shader.setMat4("model", glm::scale(model, glm::vec3(1.f)));
+        axisShader.setMat4("model", glm::scale(model, glm::vec3(1.f)));
         glDrawElements(GL_LINES, 6, GL_UNSIGNED_INT,0);//the amount of vertices drawn starts at cero finishes at n
 
         

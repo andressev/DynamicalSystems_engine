@@ -54,7 +54,7 @@ void main()
               + a6 * z6
               + a7 * z7;
 
-    vec2 fz = 10.f*poly;
+    vec2 fz =poly;
 
     // domain coloring: hue encodes arg(f(z)), brightness encodes |f(z)|
     float arg = cArg(fz);
@@ -64,7 +64,7 @@ void main()
 
     // HSV→RGB (saturation=1)
     vec3 c = clamp(abs(fract(hue + vec3(0.0, 2.0/3.0, 1.0/3.0)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
-    vec3 lightSource = vec3(mx,my,0.f);
+    
     FragColor = vec4(brightness * c, 1.0);
 }
 
