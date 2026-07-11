@@ -30,6 +30,19 @@ cmake --build out/build/x64-debug
 | `obsidian_twin/` | Obsidian-style vault mirroring the architecture (see rule below) |
 | `learnOpenGL/`, `custom/`, `explanations/` | Frozen reference playground — **never modify** |
 
+## Modules vs simulations
+
+The project has two kinds of parts (decision `obsidian_twin/decisions/0004-...`):
+**modules** — self-contained engine classes sims attach by declaring a member (one
+header + one cpp + one note in `obsidian_twin/modules/`, all three or nothing) — and
+**sims**. No runtime attach/detach machinery; composition is compile-time.
+
+Modules are layered; a module depends only on same-or-lower layers:
+`core` (App/Window/Sim/SimRegistry skeleton) · `gfx` (GL-facing) · `math` (pure
+computation, **std-only** — no glad/glfw/glm) · `compute` (future CUDA, may use gfx).
+Layer is declared in the note's frontmatter; headers stay flat in
+`engine/include/engine/` until ~15 modules. New module: use the `/new-module` skill.
+
 ## Conventions
 
 - Sims implement `engine::Sim` (`engine/include/engine/Sim.h`) and expose a factory
@@ -46,8 +59,20 @@ cmake --build out/build/x64-debug
 ## Obsidian twin rule
 
 `obsidian_twin/` is the architecture's markdown mirror (for AI + human navigation,
-Obsidian `[[wikilinks]]`). **Any change to a module's public interface or any new
+Obsidian `[[wikilinks]]`). **Before non-trivial work, open `obsidian_twin/Home.md` and
+follow its routing table** ("if you're doing X, read Y first"), plus the `## Now`
+section of `architecture/roadmap.md` for current state — and update `## Now` when the
+state of in-flight work changes. Shared math concepts live as notes in
+`obsidian_twin/math/` (idea / equations / where implemented / pitfalls) and are linked
+from sim notes, never re-derived in them. Write math in vault notes as Obsidian LaTeX —
+`$...$` inline, `$$...$$` for display equations; backticks only for actual code/GLSL
+identifiers, never for formulas. **Any change to a module's public interface or any new
 architectural mechanism requires updating the matching note** in `obsidian_twin/modules/`
 or `obsidian_twin/architecture/`. New sims get a note in `obsidian_twin/sims/` from
 `_template.md`, linked from `Home.md`. Significant design choices get a short record in
 `obsidian_twin/decisions/`. Notes are short pointers into code — never code copies.
+Module notes follow `modules/_template.md` (what it is / dependencies / how to use it /
+notes); sim notes follow `sims/_template.md` and must list "Modules attached". Never
+hand-maintain "used by" lists — Obsidian backlinks cover the reverse direction. After
+touching engine headers, sims, or the vault, run `python tools/check_twin.py` — it
+cross-checks headers ↔ module notes, sim folders ↔ sim notes, and wikilink targets.

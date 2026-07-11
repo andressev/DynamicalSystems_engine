@@ -9,7 +9,7 @@ Every simulation implements the [[Sim]] interface and is built as its own static
 engine + that one sim.
 
 ## Why
-- Andres wants both: an engine feel with runtime switching, **and** the ability to work
+- An engine feel with runtime switching, **and** the ability to work
   on one sim in total isolation.
 - Per-sim static libs make the standalone build trivial (link exactly one lib) and keep
   compile times proportional to what you're working on.
