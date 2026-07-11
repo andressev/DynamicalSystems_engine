@@ -1,6 +1,6 @@
 # 0003 — Hand-rolled function parser with GLSL codegen
 
-**Date:** 2026-07-10 · **Status:** accepted, implementation is M2 (see [[roadmap]])
+**Date:** 2026-07-10 · **Status:** implemented as [[Expression]] (M2, see [[roadmap]])
 
 ## Decision
 Write our own tokenizer + recursive-descent parser producing an AST, then generate GLSL

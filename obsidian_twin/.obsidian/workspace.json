@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "modules/Shader.md",
+                "file": "modules/Expression.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Shader"
+              "title": "Expression"
             }
           }
         ]
@@ -185,6 +185,20 @@
   },
   "active": "1a9335d0d8506997",
   "lastOpenFiles": [
+    "modules/Camera.md",
+    "sims/riemann-sphere.md",
+    "modules/Expression.md.tmp.62788.76f2bf7f565c",
+    "sims/_template.md",
+    "modules/Expression.md",
+    "modules/Sim.md",
+    "sims/riemann-sphere.md.tmp.62788.3bd2f7c58ed6",
+    "modules/Shader.md.tmp.62788.925444a8d997",
+    "decisions/0003-hand-rolled-parser-glsl-codegen.md.tmp.62788.9cc5e7ae9da2",
+    "architecture/roadmap.md.tmp.62788.26de8fdae569",
+    "Home.md.tmp.62788.8585ecb56cfc",
+    "modules/Expression.md.tmp.62788.865399d9c014",
+    "modules/Shapes.md",
+    "modules/Shader.md",
     "modules/Mesh.md",
     "Home.md",
     "modules/SimRegistry.md",
@@ -193,8 +207,6 @@
     "architecture/roadmap.md",
     "architecture/render-pipeline.md",
     "decisions/0001-hybrid-scene-interface-plus-standalone-executables.md",
-    "sims/_template.md",
-    "sims/riemann-sphere.md",
     "conventions.md"
   ]
 }

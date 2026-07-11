@@ -11,6 +11,11 @@ so no other code hand-builds matrices (see [[render-pipeline]]).
 - `processInput(GLFWwindow*, float dt)` — dt supplied by [[App]] (single clock).
 - `getViewMatrix()`, `getProjectionMatrix()`.
 - `fovDeg` (55), `aspect` (set by App each frame), `nearPlane`, `farPlane` — public knobs.
+- `orbitRadiusMin` (0.1), `orbitSlowZone` (0 = off) — orbit constraints, set by sims in
+  `init()`: the radius never goes below `orbitRadiusMin`, and within `orbitSlowZone` of it
+  all orbit movement scales down proportionally (10% floor). [[riemann-sphere]] uses them
+  to keep the camera outside the sphere and slow it near the surface.
 
 ## Invariants
 - Orbit phi is clamped to (0.05, π−0.05) to avoid the `lookAt` up-vector singularity at the poles.
+- Orbit radius is clamped to `orbitRadiusMin` every frame (not just on Q presses).

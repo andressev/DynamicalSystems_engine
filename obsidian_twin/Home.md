@@ -23,6 +23,7 @@ Each sim holds their own open gl data, and when swithcing is released.
 - [[SimRegistry]] — name → factory map, explicit registration
 - [[Camera]] — orbit/free camera, view + projection matrices
 - [[Shader]] — GLSL program wrapper (file or in-memory sources)
+- [[Expression]] — function parser: UI string → AST → CPU eval + GLSL codegen
 - [[Mesh]] — RAII VAO/VBO/EBO; the future CUDA interop point
 - [[Shapes]] — procedural geometry generators
 

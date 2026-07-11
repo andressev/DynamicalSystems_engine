@@ -17,6 +17,13 @@ App::App(const char* title, int width, int height)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
+
+    // Enlarge the whole UI; fonts stay crisp (1.92+ rasterizes at the scaled size).
+    const float uiScale = 1.5f;
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.ScaleAllSizes(uiScale);
+    style.FontScaleMain = uiScale;
+
     ImGui_ImplGlfw_InitForOpenGL(win.handle(), true);
     ImGui_ImplOpenGL3_Init("#version 330");
 }

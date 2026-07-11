@@ -31,6 +31,12 @@ void Camera::freeMode(GLFWwindow* window, float cameraSpeed)
 
 void Camera::orbitMode(GLFWwindow* window, float cameraSpeed)
 {
+    // proximity damping: movement scales with how close the radius is to its
+    // minimum, so approach is smooth and the camera slows for close inspection
+    // (floor of 10% keeps it possible to rotate and back away at the surface)
+    if (orbitSlowZone > 0.0f)
+        cameraSpeed *= glm::clamp((orbitRadius - orbitRadiusMin) / orbitSlowZone, 0.1f, 1.0f);
+
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
         orbitTheta -= cameraSpeed;
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
@@ -42,7 +48,8 @@ void Camera::orbitMode(GLFWwindow* window, float cameraSpeed)
     if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
         orbitRadius += cameraSpeed;
     if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
-        orbitRadius = glm::max(orbitRadius - cameraSpeed, 0.1f);
+        orbitRadius -= cameraSpeed;
+    orbitRadius = glm::max(orbitRadius, orbitRadiusMin);
 
     // clamp phi away from poles to avoid lookAt singularity
     const float phiMin = 0.05f;

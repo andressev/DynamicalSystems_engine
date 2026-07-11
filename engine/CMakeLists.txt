@@ -6,6 +6,7 @@ set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/External/imgui)
 add_library(engine STATIC
     "src/Window.cpp"
     "src/Shader.cpp"
+    "src/Expression.cpp"
     "src/Camera.cpp"
     "src/Mesh.cpp"
     "src/SimRegistry.cpp"

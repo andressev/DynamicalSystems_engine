@@ -19,6 +19,13 @@ public:
     glm::vec3 orbitCenter{0.0f, 0.0f, 0.0f};
     float speed = 1.5f;
 
+    // Orbit constraints, tunable per sim in init(): the camera never gets closer
+    // to orbitCenter than orbitRadiusMin, and when orbitSlowZone > 0 all orbit
+    // movement slows in proportion to the remaining distance to orbitRadiusMin
+    // (e.g. set orbitRadiusMin just above a sphere's surface to inspect it).
+    float orbitRadiusMin = 0.1f;
+    float orbitSlowZone = 0.0f;
+
     // projection parameters; App updates aspect from the window each frame
     float fovDeg = 55.0f;
     float aspect = 4.0f / 3.0f;

@@ -22,7 +22,7 @@ cmake --build out/build/x64-debug
 
 | Path | What it is |
 |---|---|
-| `engine/` | Static library: Window, Shader, Camera, Mesh, Shapes, Sim interface, SimRegistry, App loop, glad + ImGui |
+| `engine/` | Static library: Window, Shader, Camera, Mesh, Shapes, Expression (function parser → CPU eval + GLSL codegen), Sim interface, SimRegistry, App loop, glad + ImGui |
 | `sims/<name>/` | One sim per folder: `Sim` subclass, factory, own `shaders/`, own CMakeLists calling `add_sim()` |
 | `apps/explorer/` | Multi-sim executable; registers every sim |
 | `apps/standalone/` | Generic single-sim `main.cpp`, compiled once per sim by `add_sim()` |
