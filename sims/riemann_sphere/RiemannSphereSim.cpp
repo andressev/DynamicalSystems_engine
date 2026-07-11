@@ -34,7 +34,9 @@ public:
     {
         this->app = &app;
 
-        // camera stays outside the sphere and slows down near its surface
+        // camera starts framing the whole sphere, stays outside it, and slows
+        // down near its surface
+        app.camera().orbitRadius = 7.0f;
         app.camera().orbitRadiusMin = kSphereRadius + 0.2f;
         app.camera().orbitSlowZone = 2.0f;
 

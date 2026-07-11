@@ -1,38 +1,87 @@
-# OpenGL Experiments
+# Math Explorer
 
-Learning OpenGL on Windows using GLFW and GLAD, built with CMake + MSVC.
+An engine for exploring mathematics visually — complex functions today, ODEs, flows on
+manifolds and vector fields next — built on OpenGL, with CUDA interop for GPU compute on
+the roadmap. Simulations ("sims") are self-contained modules on top of a small engine
+library, and can be run all together from an explorer app or as standalone executables.
 
-## Dependencies
+## Sims
 
-| Library | Location | Purpose |
-|---------|----------|---------|
-| [GLFW](https://www.glfw.org/) | `external/glfw/` | Window & input |
-| [GLAD](https://glad.dav1d.de/) | `external/Glad/` | OpenGL loader |
+### riemann_sphere — complex functions on the Riemann sphere
 
-Both are vendored — no install needed.
+![Riemann sphere sim](docs/screenshots/riemann_sphere.png)
+
+Type any complex function `f(z)` into the UI and see its domain coloring on the Riemann
+sphere (hue = argument, brightness = modulus), live:
+
+- Full expression language: `+ - * / ^`, implicit multiplication (`2z`, `(z-1)(z+1)`),
+  functions `sin cos tan sinh cosh tanh exp log sqrt conj abs arg re im`, constants
+  `i pi e tau`.
+- Live variables: `t` (time in seconds) and `m` (mouse as a complex number) — try
+  `z^2 + m` or `sin(t)*z^3 - 1`.
+- The typed expression is parsed to an AST, compiled to GLSL and hot-swapped into the
+  fragment shader in one frame; parse errors show in red while the previous function
+  keeps rendering.
+- Controls: WASD orbits, Q/E zooms (slows near the surface), Esc quits.
+
+## Architecture
+
+| Path | What it is |
+|---|---|
+| `engine/` | Static library: Window, Shader, Camera, Mesh, Shapes, Expression (function parser → CPU eval + GLSL codegen), Sim interface, SimRegistry, App loop, glad + ImGui |
+| `sims/<name>/` | One sim per folder: a `Sim` subclass, its own `shaders/`, its own CMakeLists |
+| `apps/explorer/` | Multi-sim executable with a runtime sim picker |
+| `apps/standalone/` | Generic single-sim `main.cpp`, compiled once per sim |
+| `External/` | Vendored dependencies (no installs needed) |
+| `obsidian_twin/` | Markdown mirror of the architecture — open it in Obsidian to navigate the design, decision records and roadmap |
+| `learnOpenGL/`, `custom/`, `explanations/` | Frozen learning playground the project grew out of |
+
+Sims implement the `engine::Sim` interface (`init` / `update` / `render` / `drawUI`) and
+own their GL resources through the engine's RAII wrappers (`Mesh`, `Shader`). The
+`engine::Expression` module is sim-agnostic: one parse gives both CPU evaluation
+(`std::complex<double>`) and GLSL codegen over caller-defined variables, so future sims
+reuse the same typed-function input.
 
 ## Build
 
-Requires Visual Studio 2022 (for `cl.exe` and `vcvars`) and CMake 3.10+.
+Requires Visual Studio (MSVC + CMake + Ninja) — the presets read `VSINSTALLDIR`, so from
+a plain shell enter a developer environment first (`VsDevCmd.bat -arch=x64`, or use a
+Developer PowerShell / the VS IDE).
 
 ```powershell
-# Configure (Debug)
 cmake --preset x64-debug
-
-# Build
 cmake --build out/build/x64-debug
-
-# Run
-.\out\build\x64-debug\learnOpenGL\learnOpenGL.exe
 ```
 
-Available presets: `x64-debug`, `x64-release`, `x86-debug`, `x86-release`.
+Presets: `x64-debug`, `x64-release`, `x86-debug`, `x86-release`.
 
-## Project layout
+## Run
 
+```powershell
+# all sims, runtime picker
+.\out\build\x64-debug\apps\explorer\explorer.exe
+
+# one sim only
+.\out\build\x64-debug\sims\riemann_sphere\riemann_sphere_standalone.exe
 ```
-learnOpenGL/   # source files
-external/      # vendored GLFW & GLAD
-explanations/  # notes and references
-out/           # cmake build output (git-ignored)
-```
+
+## Dependencies
+
+All vendored under `External/` — nothing to install.
+
+| Library | Purpose |
+|---|---|
+| [GLFW](https://www.glfw.org/) | Window & input |
+| [GLAD](https://glad.dav1d.de/) | OpenGL loader |
+| [GLM](https://github.com/g-truc/glm) | Vector/matrix math |
+| [Dear ImGui](https://github.com/ocornut/imgui) | UI layer |
+| [stb_image](https://github.com/nothings/stb) | Image loading |
+
+## Roadmap
+
+- **M1 — foundation** (done): engine library, explorer + standalone apps, Riemann sphere sim.
+- **M2 — function parser** (done): typed expressions → AST → CPU eval + GLSL codegen, hot-recompiled shaders.
+- **M3 — ODE / vector fields**: RK4 integrator over the same AST, vector-field sim, flows on manifolds.
+- **M4 — CUDA interop**: GPU-side particle advection through the mesh VBOs.
+
+Details, decision records and module notes live in `obsidian_twin/` (best viewed in Obsidian).

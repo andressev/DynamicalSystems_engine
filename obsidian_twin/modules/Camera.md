@@ -11,6 +11,8 @@ so no other code hand-builds matrices (see [[render-pipeline]]).
 - `processInput(GLFWwindow*, float dt)` — dt supplied by [[App]] (single clock).
 - `getViewMatrix()`, `getProjectionMatrix()`.
 - `fovDeg` (55), `aspect` (set by App each frame), `nearPlane`, `farPlane` — public knobs.
+- `orbitRadius` (3) — current orbit distance; sims may set it in `init()` to frame their
+  scene ([[riemann-sphere]] starts at 7).
 - `orbitRadiusMin` (0.1), `orbitSlowZone` (0 = off) — orbit constraints, set by sims in
   `init()`: the radius never goes below `orbitRadiusMin`, and within `orbitSlowZone` of it
   all orbit movement scales down proportionally (10% floor). [[riemann-sphere]] uses them

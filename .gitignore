@@ -39,6 +39,9 @@ ipch/
 *.spv
 *.bin
 
+# Dear ImGui window layout (written next to the exe's working dir)
+imgui.ini
+
 # OS
 Thumbs.db
 Desktop.ini

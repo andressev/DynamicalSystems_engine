@@ -25,6 +25,8 @@ public:
     // (e.g. set orbitRadiusMin just above a sphere's surface to inspect it).
     float orbitRadiusMin = 0.1f;
     float orbitSlowZone = 0.0f;
+    // Current orbit distance; sims may set it in init() to frame their scene.
+    float orbitRadius = 3.0f;
 
     // projection parameters; App updates aspect from the window each frame
     float fovDeg = 55.0f;
@@ -43,7 +45,6 @@ private:
 
     float orbitTheta = 0.0f;
     float orbitPhi = glm::half_pi<float>();
-    float orbitRadius = 3.0f;
 };
 
 } // namespace engine
