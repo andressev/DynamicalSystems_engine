@@ -1,28 +1,11 @@
-# Math Explorer
+# Mathematics Engine
 
-An engine for exploring mathematics visually — complex functions today, ODEs, flows on
+An engine for exploring mathematics visually,  complex functions on the riemann sphere, ODEs, flows on
 manifolds and vector fields next — built on OpenGL, with CUDA interop for GPU compute on
-the roadmap. Simulations ("sims") are self-contained modules on top of a small engine
+the roadmap. 
+Simulations ("sims") are self-contained modules on top of a small engine
 library, and can be run all together from an explorer app or as standalone executables.
 
-## Sims
-
-### riemann_sphere — complex functions on the Riemann sphere
-
-![Riemann sphere sim](docs/screenshots/riemann_sphere.png)
-
-Type any complex function `f(z)` into the UI and see its domain coloring on the Riemann
-sphere (hue = argument, brightness = modulus), live:
-
-- Full expression language: `+ - * / ^`, implicit multiplication (`2z`, `(z-1)(z+1)`),
-  functions `sin cos tan sinh cosh tanh exp log sqrt conj abs arg re im`, constants
-  `i pi e tau`.
-- Live variables: `t` (time in seconds) and `m` (mouse as a complex number) — try
-  `z^2 + m` or `sin(t)*z^3 - 1`.
-- The typed expression is parsed to an AST, compiled to GLSL and hot-swapped into the
-  fragment shader in one frame; parse errors show in red while the previous function
-  keeps rendering.
-- Controls: WASD orbits, Q/E zooms (slows near the surface), Esc quits.
 
 ## Architecture
 
@@ -77,11 +60,25 @@ All vendored under `External/` — nothing to install.
 | [Dear ImGui](https://github.com/ocornut/imgui) | UI layer |
 | [stb_image](https://github.com/nothings/stb) | Image loading |
 
-## Roadmap
 
-- **M1 — foundation** (done): engine library, explorer + standalone apps, Riemann sphere sim.
-- **M2 — function parser** (done): typed expressions → AST → CPU eval + GLSL codegen, hot-recompiled shaders.
-- **M3 — ODE / vector fields**: RK4 integrator over the same AST, vector-field sim, flows on manifolds.
-- **M4 — CUDA interop**: GPU-side particle advection through the mesh VBOs.
+## Sims
+
+### riemann_sphere — complex functions on the Riemann sphere
+
+![Riemann sphere sim](docs/screenshots/riemann_sphere.png)
+
+Type any complex function `f(z)` into the UI and see its domain coloring on the Riemann
+sphere (hue = argument, brightness = modulus), live:
+
+- Full expression language: `+ - * / ^`, implicit multiplication (`2z`, `(z-1)(z+1)`),
+  functions `sin cos tan sinh cosh tanh exp log sqrt conj abs arg re im`, constants
+  `i pi e tau`.
+- Live variables: `t` (time in seconds) and `m` (mouse as a complex number) — try
+  `z^2 + m` or `sin(t)*z^3 - 1`.
+- The typed expression is parsed to an AST, compiled to GLSL and hot-swapped into the
+  fragment shader in one frame; parse errors show in red while the previous function
+  keeps rendering.
+- Controls: WASD orbits, Q/E zooms (slows near the surface), Esc quits.
+
 
 Details, decision records and module notes live in `obsidian_twin/` (best viewed in Obsidian).

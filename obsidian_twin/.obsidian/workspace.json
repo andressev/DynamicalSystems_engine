@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "math/domain-coloring.md",
+                "file": "modules/Camera.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "domain-coloring"
+              "title": "Camera"
             }
           }
         ]
@@ -185,6 +185,7 @@
   },
   "active": "1a9335d0d8506997",
   "lastOpenFiles": [
+    "math/domain-coloring.md",
     "math/stereographic-projection.md",
     "sims/riemann-sphere.md.tmp.80944.e7b457029af1",
     "math/domain-coloring.md.tmp.80944.ef18cedcff94",
@@ -192,7 +193,6 @@
     "math/stereographic-projection.md.tmp.80944.84d76f8eebdc",
     "math/stereographic-projection.md.tmp.80944.47a065f6eb43",
     "math/_template.md.tmp.80944.bcd613a3b890",
-    "math/domain-coloring.md",
     "math/_template.md",
     "decisions/0005-vault-as-ai-navigation.md",
     "decisions/0004-modules-vs-simulations.md",
