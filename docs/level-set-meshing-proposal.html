@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meshing the Level Set — method proposal</title>
+<style>
+  :root {
+    --paper: #eef1f4;
+    --ink: #1a2129;
+    --ink-soft: #46525e;
+    --ink-faint: #6b7783;
+    --line: #ccd4db;
+    --card: #f7f9fa;
+    --accent: #0f8f7c;        /* isoline teal */
+    --accent-ink: #0b6b5d;
+    --accent-wash: #e2f0ed;
+    --amber: #a06914;         /* verdict amber */
+    --amber-wash: #f4e9d6;
+    --code-bg: #e5eaee;
+    --mono: "Cascadia Code", Consolas, "SF Mono", Menlo, monospace;
+    --serif: Cambria, Charter, "Bitstream Charter", Georgia, serif;
+    --sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #10151b;
+      --ink: #dde4ea;
+      --ink-soft: #9fabb6;
+      --ink-faint: #74818d;
+      --line: #29323c;
+      --card: #161c23;
+      --accent: #2fc4ab;
+      --accent-ink: #4fd6bf;
+      --accent-wash: #12241f;
+      --amber: #d9a03f;
+      --amber-wash: #2a2113;
+      --code-bg: #1b222a;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.65;
+    margin: 0;
+    padding: 3.5rem 1.25rem 6rem;
+    font-size: 1.02rem;
+  }
+  main { max-width: 76ch; margin: 0 auto; }
+
+  h1, h2, h3 { font-family: var(--serif); text-wrap: balance; line-height: 1.2; }
+  h1 { font-size: 2.5rem; font-weight: 600; margin: .4rem 0 .8rem; }
+  h2 { font-size: 1.65rem; font-weight: 600; margin: 0 0 1rem; }
+  h3 { font-size: 1.15rem; font-weight: 650; margin: 1.6rem 0 .5rem; }
+  p { margin: 0 0 1rem; }
+  a { color: var(--accent-ink); text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+  .eyebrow {
+    font-family: var(--mono); font-size: .74rem; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--accent-ink); margin: 0;
+  }
+  .lede { font-size: 1.12rem; color: var(--ink-soft); max-width: 66ch; }
+  .meta { font-family: var(--mono); font-size: .78rem; color: var(--ink-faint); margin-top: 1.2rem; }
+
+  header.doc { padding-bottom: 2.2rem; border-bottom: 2px solid var(--ink); margin-bottom: 2.8rem; }
+
+  section { margin: 0 0 3.2rem; }
+  section > .sec-label {
+    font-family: var(--mono); font-size: .72rem; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-faint); display: block; margin-bottom: .35rem;
+  }
+
+  .formula {
+    font-family: var(--mono); background: var(--code-bg); border-radius: 6px;
+    padding: .1em .4em; font-size: .92em; white-space: nowrap;
+  }
+  .formula-block {
+    font-family: var(--mono); background: var(--code-bg); border-radius: 8px;
+    padding: .9rem 1.1rem; margin: 1.1rem 0; overflow-x: auto; font-size: .95rem;
+    white-space: pre;
+  }
+  var { font-style: italic; font-family: inherit; }
+  sup, sub { line-height: 0; }
+
+  /* method cards */
+  .method {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1.5rem 1.6rem 1.3rem; margin: 0 0 1.4rem;
+  }
+  .method-head { display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap; margin-bottom: .3rem; }
+  .method-head h3 { margin: 0; font-size: 1.25rem; }
+  .method-index { font-family: var(--mono); color: var(--ink-faint); font-size: .8rem; }
+  .chip {
+    font-family: var(--mono); font-size: .68rem; letter-spacing: .08em; text-transform: uppercase;
+    padding: .18em .6em; border-radius: 999px; white-space: nowrap;
+  }
+  .chip.rec  { background: var(--accent-wash); color: var(--accent-ink); }
+  .chip.warn { background: var(--amber-wash); color: var(--amber); }
+  .chip.mut  { background: var(--code-bg); color: var(--ink-faint); }
+
+  dl.verdicts { display: grid; grid-template-columns: max-content 1fr; gap: .3rem 1rem; margin: .8rem 0 0; }
+  dl.verdicts dt { font-family: var(--mono); font-size: .74rem; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-faint); padding-top: .2rem; }
+  dl.verdicts dd { margin: 0; }
+
+  ul.papers { list-style: none; padding: 0; margin: .9rem 0 0; border-top: 1px dashed var(--line); }
+  ul.papers li { padding: .5rem 0 .45rem; border-bottom: 1px dashed var(--line); font-size: .9rem; color: var(--ink-soft); }
+  ul.papers li strong { color: var(--ink); font-weight: 600; }
+  .papers-label { font-family: var(--mono); font-size: .7rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint); margin: 1.2rem 0 0; }
+
+  /* tables */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; margin: 1.2rem 0; }
+  table { border-collapse: collapse; width: 100%; font-size: .88rem; min-width: 640px; }
+  th, td { text-align: left; padding: .55rem .8rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th { font-family: var(--mono); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); background: var(--card); }
+  tbody tr:last-child td { border-bottom: none; }
+  td.good { color: var(--accent-ink); font-weight: 600; }
+  td.bad  { color: var(--amber); }
+  td { font-variant-numeric: tabular-nums; }
+
+  .callout {
+    border-left: 3px solid var(--accent); background: var(--accent-wash);
+    border-radius: 0 10px 10px 0; padding: 1rem 1.3rem; margin: 1.4rem 0;
+  }
+  .callout.amber { border-left-color: var(--amber); background: var(--amber-wash); }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout .co-label { font-family: var(--mono); font-size: .7rem; letter-spacing: .12em; text-transform: uppercase; display: block; margin-bottom: .3rem; }
+  .callout .co-label { color: var(--accent-ink); }
+  .callout.amber .co-label { color: var(--amber); }
+
+  ol.reading { padding-left: 1.4rem; }
+  ol.reading li { margin-bottom: .55rem; }
+  ol.reading li::marker { font-family: var(--mono); color: var(--accent-ink); font-weight: 600; }
+
+  .qa h3 { margin-top: 2rem; }
+  .qa h3::before { content: "Q · "; color: var(--accent-ink); font-family: var(--mono); font-size: .85em; }
+
+  figure.diagram { margin: 1.4rem 0; text-align: center; }
+  figure.diagram svg { max-width: 100%; height: auto; }
+  figure.diagram figcaption { font-size: .82rem; color: var(--ink-faint); font-family: var(--mono); margin-top: .5rem; }
+  .d-grid   { stroke: var(--line); stroke-width: 1; fill: none; }
+  .d-accent { stroke: var(--accent); stroke-width: 2.2; fill: none; }
+  .d-dot-pos { fill: var(--accent); }
+  .d-dot-neg { fill: none; stroke: var(--ink-faint); stroke-width: 1.4; }
+  .d-label  { font-family: var(--mono); font-size: 11px; fill: var(--ink-faint); }
+</style>
+</head>
+<body>
+<main>
+<header class="doc">
+  <p class="eyebrow">Math Explorer · sim proposal · pre-reading, no code yet</p>
+  <h1>Meshing the Level Set</h1>
+  <p class="lede">
+    The next sim is a graphing calculator for surfaces defined implicitly:
+    the user types <span class="formula">f(x, y, z) = c</span> and the engine shows the
+    2-manifold that equation carves out of ℝ³. This document compares the known ways to turn
+    that equation into geometry, backed by the original papers, weighs where CUDA fits,
+    and answers the standing question: <em>can we parametrize the resulting surface?</em>
+  </p>
+  <p class="meta">prepared 2026-07-13 · for the level-set sim (working name) · builds on Expression, Mesh, Shader</p>
+</header>
+
+<!-- ============================================================ -->
+<section>
+  <span class="sec-label">§1 · Requirements</span>
+  <h2>What this sim actually needs</h2>
+  <p>
+    Four requirements drive every judgment below. They come from what you said you want to
+    <em>do</em> with the surface, not just how it should look:
+  </p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Requirement</th><th>Consequence</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Live function input</strong> — user retypes <var>f</var>, surface updates</td>
+          <td>Extraction must be fast enough to re-run per edit (ideally per frame, so sweeping <var>c</var> animates). The Expression parser already emits GLSL; the same printer can emit CUDA C.</td></tr>
+      <tr><td><strong>Real vertices</strong> — arrows out of the surface, trajectories on it, flows</td>
+          <td>The backbone must produce an actual <code class="formula">engine::Mesh</code>: positions + normals you can seed glyphs and integrate ODEs from. Image-space tricks don't qualify.</td></tr>
+      <tr><td><strong>Topology honesty</strong> — as <var>c</var> slides, components merge, split, appear</td>
+          <td>The method must not assume it knows the surface's shape in advance. This is also, as §5 shows, exactly what kills global parametrization.</td></tr>
+      <tr><td><strong>CUDA on the horizon</strong> — the engine's stated end goal is GL + CUDA interop</td>
+          <td>Prefer methods that are embarrassingly parallel over a grid. One family below is <em>the</em> canonical CUDA workload.</td></tr>
+    </tbody>
+  </table></div>
+
+  <p>
+    A quick word on the mathematical object itself. If <var>c</var> is a <strong>regular value</strong>
+    of <var>f</var> (meaning ∇<var>f</var> ≠ 0 everywhere on the preimage), the
+    <strong>preimage theorem</strong> guarantees <span class="formula">f⁻¹(c)</span> is a smooth,
+    orientable 2-manifold embedded in ℝ³ — a genuinely nice surface. And by
+    <strong>Sard's theorem</strong>, almost every <var>c</var> (all but a measure-zero set) is regular.
+    The bad values are the interesting ones: they are the <strong>critical values</strong> of
+    <var>f</var>, and crossing one changes the surface's topology (Morse theory — see §5).
+    The sim will hit them whenever the user slides <var>c</var>; the pipeline just has to survive
+    the frame, not be clever about it.
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <span class="sec-label">§2 · The elephant in the shader</span>
+  <h2>Why ray marching is a mode, not the backbone</h2>
+  <p>
+    Your instinct is correct. Ray marching (walking each camera ray through the volume in the
+    fragment shader until <span class="formula">f − c</span> changes sign) renders implicit
+    surfaces beautifully and would reuse the domain-coloring codegen almost verbatim — but its
+    output is <em>pixels</em>. There is no vertex anywhere. Nothing to attach an arrow to,
+    nothing to integrate a trajectory on, nothing for CUDA to compute over. Everything lives
+    and dies inside one fragment shader invocation.
+  </p>
+  <p>
+    That said, don't discard it — keep it in the back pocket as a <strong>reference renderer</strong>:
+    it shows the <em>exact</em> surface with no discretization, so it's the ground truth you
+    compare your mesh against (is marching cubes missing a thin tube? toggle the ray-marched
+    view and see). It's also the cheapest possible first picture while a mesh is still being
+    extracted. The literature here is solid: Hart's sphere tracing for Lipschitz-bounded fields,
+    Mitchell's interval-arithmetic root isolation for robustness with arbitrary <var>f</var>,
+    and — most relevant to this engine — Keeter's 2020 paper on evaluating <em>compiled
+    closed-form expressions</em> massively in parallel on the GPU, which is philosophically
+    the same trick Expression already plays.
+  </p>
+  <ul class="papers">
+    <li><strong>Hart</strong>, “Sphere Tracing: A Geometric Method for the Antialiased Ray Tracing of Implicit Surfaces,” <em>The Visual Computer</em> 12, 1996. <a href="https://doi.org/10.1007/s003710050084">doi:10.1007/s003710050084</a></li>
+    <li><strong>Mitchell</strong>, “Robust Ray Intersection with Interval Arithmetic,” <em>Graphics Interface</em>, 1990.</li>
+    <li><strong>Keeter</strong>, “Massively Parallel Rendering of Complex Closed-Form Implicit Surfaces,” <em>ACM SIGGRAPH</em>, 2020. <a href="https://doi.org/10.1145/3386569.3392429">doi:10.1145/3386569.3392429</a></li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <span class="sec-label">§3 · The candidates</span>
+  <h2>Mesh extraction methods, compared</h2>
+  <p>
+    All serious contenders share one skeleton: <em>sample <var>f</var> on some spatial structure,
+    find where the sign of <span class="formula">f − c</span> flips, build triangles there</em>.
+    They differ in what structure they sample, where they place vertices, and what they can
+    promise about the result. Ordered by implementation effort — the order doubles as a
+    plausible build order.
+  </p>
+
+  <!-- Method 1 -->
+  <article class="method">
+    <div class="method-head">
+      <span class="method-index">M1</span>
+      <h3>Marching Cubes (and the simplex fix, Marching Tetrahedra)</h3>
+      <span class="chip rec">recommended backbone</span>
+    </div>
+    <p>
+      Sample <var>f</var> on a uniform <var>N</var>³ grid. Each cube of 8 samples gets an 8-bit
+      code from the signs of <span class="formula">f − c</span> at its corners; a 256-entry lookup
+      table says which triangles the surface cuts through that cube, and vertex positions come
+      from linear interpolation along the crossed edges. That's the whole algorithm — the 1987
+      Lorensen–Cline paper is one of the most cited papers in all of computer graphics because
+      the idea is exactly this simple.
+    </p>
+    <figure class="diagram">
+      <svg viewBox="0 0 460 150" role="img" aria-label="A 2D grid of samples with an isoline crossing sign changes">
+        <g class="d-grid">
+          <path d="M40 20 H420 M40 60 H420 M40 100 H420 M40 140 H420"/>
+          <path d="M40 20 V140 M116 20 V140 M192 20 V140 M268 20 V140 M344 20 V140 M420 20 V140"/>
+        </g>
+        <path class="d-accent" d="M40 116 C 110 96, 150 40, 230 44 C 310 48, 340 108, 420 92"/>
+        <circle class="d-dot-neg" cx="40" cy="20" r="4"/><circle class="d-dot-neg" cx="116" cy="20" r="4"/><circle class="d-dot-neg" cx="192" cy="20" r="4"/><circle class="d-dot-neg" cx="268" cy="20" r="4"/><circle class="d-dot-neg" cx="344" cy="20" r="4"/><circle class="d-dot-neg" cx="420" cy="20" r="4"/>
+        <circle class="d-dot-neg" cx="40" cy="60" r="4"/><circle class="d-dot-neg" cx="116" cy="60" r="4"/><circle class="d-dot-neg" cx="192" cy="60" r="4"/><circle class="d-dot-neg" cx="268" cy="60" r="4"/><circle class="d-dot-neg" cx="344" cy="60" r="4"/><circle class="d-dot-neg" cx="420" cy="60" r="4"/>
+        <circle class="d-dot-pos" cx="40" cy="100" r="4"/><circle class="d-dot-pos" cx="116" cy="100" r="4"/><circle class="d-dot-neg" cx="192" cy="100" r="4"/><circle class="d-dot-neg" cx="268" cy="100" r="4"/><circle class="d-dot-pos" cx="344" cy="100" r="4"/><circle class="d-dot-pos" cx="420" cy="100" r="4"/>
+        <circle class="d-dot-pos" cx="40" cy="140" r="4"/><circle class="d-dot-pos" cx="116" cy="140" r="4"/><circle class="d-dot-pos" cx="192" cy="140" r="4"/><circle class="d-dot-pos" cx="268" cy="140" r="4"/><circle class="d-dot-pos" cx="344" cy="140" r="4"/><circle class="d-dot-pos" cx="420" cy="140" r="4"/>
+        <text class="d-label" x="424" y="88">f = c</text>
+      </svg>
+      <figcaption>the 2D cartoon: filled = f &lt; c, hollow = f &gt; c; triangles live where edges change sign</figcaption>
+    </figure>
+    <p>
+      The classic table has ambiguous cases that can leave pinhole cracks; two standard fixes
+      exist. Chernyaev's <em>MC33</em> extends the table to resolve every case consistently, and
+      the <em>asymptotic decider</em> disambiguates faces analytically. Alternatively,
+      <strong>Marching Tetrahedra</strong> splits each cube into 5–6 tetrahedra — a simplex has
+      no ambiguous configurations at all, at the price of more, skinnier triangles.
+    </p>
+    <dl class="verdicts">
+      <dt>Fits engine</dt><dd>Output is exactly an indexed triangle list → <code class="formula">engine::Mesh</code> with layout <code class="formula">{3, 3}</code> (position + normal). Normals come free and <em>exactly</em> from the analytic gradient ∇<var>f</var> — see §4.</dd>
+      <dt>Weakness</dt><dd>Vertices sit on grid edges, so quality depends on resolution; sharp creases get rounded (rarely an issue for smooth level sets of analytic <var>f</var>).</dd>
+      <dt>Why first</dt><dd>Simple enough to have running on CPU in a day, and it is the single most parallelized meshing algorithm in existence — the CUDA path in §4 is this method.</dd>
+    </dl>
+    <p class="papers-label">Papers</p>
+    <ul class="papers">
+      <li><strong>Lorensen, Cline</strong>, “Marching Cubes: A High Resolution 3D Surface Construction Algorithm,” <em>ACM SIGGRAPH</em>, 1987. <a href="https://doi.org/10.1145/37401.37422">doi:10.1145/37401.37422</a></li>
+      <li><strong>Chernyaev</strong>, “Marching Cubes 33: Construction of Topologically Correct Isosurfaces,” CERN technical report CN/95-17, 1995.</li>
+      <li><strong>Nielson, Hamann</strong>, “The Asymptotic Decider: Resolving the Ambiguity in Marching Cubes,” <em>IEEE Visualization</em>, 1991.</li>
+      <li><strong>Doi, Koide</strong>, “An Efficient Method of Triangulating Equi-Valued Surfaces by Using Tetrahedral Cells,” <em>IEICE Transactions</em>, 1991. (marching tetrahedra)</li>
+      <li><strong>Newman, Yi</strong>, “A Survey of the Marching Cubes Algorithm,” <em>Computers &amp; Graphics</em> 30, 2006. (the map of all the variants)</li>
+    </ul>
+  </article>
+
+  <!-- Method 2 -->
+  <article class="method">
+    <div class="method-head">
+      <span class="method-index">M2</span>
+      <h3>Dual methods — Surface Nets &amp; Dual Contouring</h3>
+      <span class="chip rec">upgrade path</span>
+    </div>
+    <p>
+      Same grid, opposite philosophy: instead of putting several vertices on the <em>edges</em> of
+      each crossed cell, put <em>one</em> vertex inside each crossed cell and connect neighbors
+      into quads. Surface Nets places that vertex by relaxation; Dual Contouring places it by
+      minimizing a quadratic error function built from <em>Hermite data</em> — surface points
+      <em>plus normals</em> on the crossed edges. The payoff is much better vertex placement,
+      natural quad meshes (nicer for flows and any future subdivision), and faithful sharp
+      features.
+    </p>
+    <p>
+      The key input, exact normals on edge crossings, is cheap for this engine: the normal of a
+      level set is just <span class="formula">∇f / |∇f|</span>, and Expression can be taught to
+      emit ∇<var>f</var> symbolically (§4). That makes Dual Contouring unusually attractive here
+      compared to engines that only have sampled data.
+    </p>
+    <dl class="verdicts">
+      <dt>Fits engine</dt><dd>Drop-in replacement for M1 at the same grid; produces quads → triangulate into <code class="formula">Mesh</code>. Shares all CUDA infrastructure with M1.</dd>
+      <dt>Weakness</dt><dd>Plain DC can produce non-manifold edges in nasty configurations; the “manifold dual contouring” follow-up repairs this. More bookkeeping than M1.</dd>
+      <dt>When</dt><dd>After M1 works and you find yourself wanting better-shaped triangles for the flow integrator.</dd>
+    </dl>
+    <p class="papers-label">Papers</p>
+    <ul class="papers">
+      <li><strong>Gibson</strong>, “Constrained Elastic Surface Nets: Generating Smooth Surfaces from Binary Segmented Data,” <em>MICCAI</em>, 1998.</li>
+      <li><strong>Ju, Losasso, Schaefer, Warren</strong>, “Dual Contouring of Hermite Data,” <em>ACM SIGGRAPH</em>, 2002. <a href="https://doi.org/10.1145/566654.566586">doi:10.1145/566654.566586</a></li>
+      <li><strong>Schaefer, Warren</strong>, “Dual Marching Cubes: Primal Contouring of Dual Grids,” <em>Pacific Graphics</em>, 2004.</li>
+      <li><strong>Schaefer, Ju, Warren</strong>, “Manifold Dual Contouring,” <em>IEEE TVCG</em> 13(3), 2007.</li>
+    </ul>
+  </article>
+
+  <!-- Method 3 -->
+  <article class="method">
+    <div class="method-head">
+      <span class="method-index">M3</span>
+      <h3>Continuation / surface tracking (“marching triangles”)</h3>
+      <span class="chip warn">elegant but fragile</span>
+    </div>
+    <p>
+      Forget the grid: start from one seed point on the surface, and grow a triangle fan outward
+      along it — each new vertex is predicted in the tangent plane and Newton-projected back onto
+      <span class="formula">f = c</span>. Bloomenthal's continuation and Hartmann's marching
+      method produce gorgeous, nearly-equilateral, curvature-adapted meshes, and they only ever
+      evaluate <var>f</var> <em>near the surface</em> instead of over a whole volume.
+    </p>
+    <p>
+      The fatal flaw for this sim: it finds only the connected component containing the seed.
+      A user's <span class="formula">f = c</span> routinely has five components the sim doesn't
+      know about, and as <var>c</var> slides across a critical value new components are born with
+      no seed to grow from. You'd need a grid search to find seeds anyway — at which point M1
+      already did the job. Worth reading for the <em>predict–project</em> step, which is exactly
+      the machinery the flow integrator reuses (§5).
+    </p>
+    <p class="papers-label">Papers</p>
+    <ul class="papers">
+      <li><strong>Bloomenthal</strong>, “Polygonization of Implicit Surfaces,” <em>Computer Aided Geometric Design</em> 5, 1988.</li>
+      <li><strong>Hilton, Stoddart, Illingworth, Windeatt</strong>, “Marching Triangles: Range Image Fusion for Complex Object Modelling,” <em>ICIP</em>, 1996.</li>
+      <li><strong>Hartmann</strong>, “A Marching Method for the Triangulation of Surfaces,” <em>The Visual Computer</em> 14, 1998.</li>
+    </ul>
+  </article>
+
+  <!-- Method 4 -->
+  <article class="method">
+    <div class="method-head">
+      <span class="method-index">M4</span>
+      <h3>Particle systems on the surface</h3>
+      <span class="chip rec">not a mesher — the glyph engine</span>
+    </div>
+    <p>
+      Witkin &amp; Heckbert's classic: scatter particles, constrain them to
+      <span class="formula">f = c</span> with the same Newton projection as M3, and let them
+      repel each other until they blanket the surface uniformly. The output isn't a mesh — it's
+      a perfectly even <em>sampling</em> of the manifold, each sample carrying its position and
+      normal.
+    </p>
+    <p>
+      Read that against your requirements again: “stick arrows out of the manifold, simulate
+      trajectories.” Particles <em>are</em> the arrow anchors and the trajectory seeds. This
+      method doesn't compete with M1 — it composes with it: the mesh (M1/M2) is what you see,
+      the particles are what the vector-field layer computes on. Each particle is one CUDA
+      thread doing a few evaluations of <var>f</var> and ∇<var>f</var> per step — the
+      cleanest possible first CUDA kernel for this engine.
+    </p>
+    <p class="papers-label">Papers</p>
+    <ul class="papers">
+      <li><strong>Witkin, Heckbert</strong>, “Using Particles to Sample and Control Implicit Surfaces,” <em>ACM SIGGRAPH</em>, 1994. <a href="https://doi.org/10.1145/192161.192227">doi:10.1145/192161.192227</a></li>
+      <li><strong>Meyer, Kirby, Whitaker</strong>, “Topology, Accuracy, and Quality of Isosurface Meshes Using Dynamic Particles,” <em>IEEE TVCG</em> 13(6), 2007.</li>
+    </ul>
+  </article>
+
+  <!-- Method 5 -->
+  <article class="method">
+    <div class="method-head">
+      <span class="method-index">M5</span>
+      <h3>Guaranteed-topology meshing</h3>
+      <span class="chip mut">research-grade · later, if ever</span>
+    </div>
+    <p>
+      Everything above can, at finite resolution, miss a thin handle and silently report the
+      wrong genus. If the sim ever wants to make <em>topological claims</em> (“this surface has
+      genus 3”), there is a literature that certifies the mesh is isotopic to the true level set:
+      Plantinga–Vegter drive an octree subdivision with interval arithmetic until a topological
+      correctness criterion holds; Boissonnat–Oudot do provably-good Delaunay sampling. Costs:
+      interval evaluation of <var>f</var> (Expression would need an interval evaluator — doable,
+      it's the same tree walk), and running time that spikes near critical values. File under
+      “when the sim grows a topology readout.”
+    </p>
+    <p class="papers-label">Papers</p>
+    <ul class="papers">
+      <li><strong>Plantinga, Vegter</strong>, “Isotopic Approximation of Implicit Curves and Surfaces,” <em>Symposium on Geometry Processing</em>, 2004.</li>
+      <li><strong>Boissonnat, Oudot</strong>, “Provably Good Sampling and Meshing of Surfaces,” <em>Graphical Models</em> 67, 2005.</li>
+      <li><strong>Cheng, Dey, Shewchuk</strong>, <em>Delaunay Mesh Generation</em>, CRC Press, 2012. (the book on this)</li>
+    </ul>
+  </article>
+
+  <h3>Side by side</h3>
+  <div class="table-wrap"><table>
+    <thead><tr>
+      <th>Method</th><th>Output</th><th>Finds all components</th><th>Per-frame re-extract</th><th>GPU fit</th><th>Effort</th>
+    </tr></thead>
+    <tbody>
+      <tr><td>Ray marching (§2)</td><td class="bad">pixels only</td><td class="good">yes</td><td class="good">it IS per-frame</td><td class="good">native</td><td>low</td></tr>
+      <tr><td>M1 Marching Cubes</td><td class="good">triangle mesh</td><td class="good">yes (grid-global)</td><td class="good">yes, even on CPU at modest N</td><td class="good">canonical CUDA workload</td><td>low–mid</td></tr>
+      <tr><td>M2 Dual Contouring</td><td class="good">quad mesh, better verts</td><td class="good">yes</td><td class="good">yes</td><td class="good">same infra as M1</td><td>mid</td></tr>
+      <tr><td>M3 Continuation</td><td class="good">high-quality mesh</td><td class="bad">no — seed per component</td><td class="bad">awkward (sequential growth)</td><td class="bad">poor (inherently serial frontier)</td><td>mid</td></tr>
+      <tr><td>M4 Particles</td><td>point samples + normals</td><td class="bad">needs seeding (use M1's verts)</td><td class="good">yes, incremental</td><td class="good">one thread per particle</td><td>mid</td></tr>
+      <tr><td>M5 Certified</td><td class="good">mesh + topology proof</td><td class="good">yes, provably</td><td class="bad">no — offline speeds</td><td>partial</td><td>high</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="callout">
+    <span class="co-label">Proposed shape of the sim</span>
+    <p>
+      <strong>M1 is the backbone</strong> (grid → marching cubes → <code class="formula">engine::Mesh</code>),
+      with normals from the analytic gradient. <strong>M4 rides on top</strong> for arrows and
+      trajectory seeds. <strong>Ray marching is an optional ground-truth toggle.</strong>
+      M2 is the quality upgrade once flows exist; M3 is reading material for its
+      projection step; M5 is a someday.
+    </p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <span class="sec-label">§4 · Compute</span>
+  <h2>Where CUDA comes in — and yes, it's time</h2>
+  <p>
+    Marching cubes is not just compatible with CUDA; it is the algorithm NVIDIA ships as the
+    flagship interop sample, and the reason is structural: every stage is data-parallel with no
+    communication between neighbors.
+  </p>
+  <div class="formula-block">grid eval        one thread per grid point:  F[i,j,k] = f(x,y,z) − c
+cell classify    one thread per cell:        8 sign bits → triangle count (table)
+compaction       exclusive prefix sum (CUB/Thrust) → where each cell writes
+vertex gen       one thread per output triangle → writes straight into the VBO</div>
+  <p>
+    The last line is the important one for this engine. CUDA can register an OpenGL buffer
+    object (<span class="formula">cudaGraphicsGLRegisterBuffer</span>), map it, and have kernels
+    write vertex data directly into the memory OpenGL will draw from — <em>zero copies, nothing
+    ever touches the CPU</em>. That is precisely the “<code class="formula">Mesh</code> is the
+    future CUDA-interop point” design decision already recorded in the engine's architecture
+    notes, now with its first real customer. Re-extracting a 128³ grid this way runs at
+    real-time rates on any modern GPU, which is what makes <em>animating the sweep of c</em> —
+    watching handles form and split live — feasible.
+  </p>
+  <p>
+    Two engine-specific notes, both cheap and both multipliers:
+  </p>
+  <p>
+    <strong>Codegen, again.</strong> Expression already walks its tree to print GLSL. Printing
+    CUDA C from the same tree is the same walk with different spellings (NVRTC can compile it at
+    runtime, exactly like <span class="formula">Shader::fromSources</span> does for GLSL). One
+    parser, three backends: CPU eval, GLSL, CUDA.
+  </p>
+  <p>
+    <strong>Symbolic gradients.</strong> Differentiating the expression tree is a mechanical
+    transform (each node type has a derivative rule — automatic differentiation of the AST).
+    That one feature feeds three consumers: exact mesh normals for M1/M2
+    (<span class="formula">n = ∇f/|∇f|</span>, strictly better than finite differences),
+    Hermite data for M2, and the tangent projector for §5. It's the highest-leverage small
+    feature in this whole document.
+  </p>
+  <p class="papers-label">Papers &amp; references</p>
+  <ul class="papers">
+    <li><strong>Dyken, Ziegler, Theobalt, Seidel</strong>, “High-Speed Marching Cubes Using Histogram Pyramids,” <em>Computer Graphics Forum</em> 27(8), 2008. (the standard GPU formulation)</li>
+    <li><strong>NVIDIA</strong>, “marchingCubes” CUDA SDK sample — grid classify + Thrust scan + GL interop, i.e. the pipeline above, as shipping code to crib from.</li>
+    <li><strong>Keeter</strong>, SIGGRAPH 2020 (cited in §2) — runtime-compiled expression evaluation on GPU, the NVRTC idea taken to its extreme.</li>
+    <li><strong>Griewank, Walther</strong>, <em>Evaluating Derivatives</em>, SIAM, 2008. (automatic differentiation, if you want the deep version of the gradient trick)</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <span class="sec-label">§5 · The math question</span>
+  <h2>Is a parametrization even possible?</h2>
+  <p>
+    Short version: <strong>locally, always. Globally with one chart, provably never</strong> (for
+    the closed surfaces this sim will mostly produce). <strong>And for flows you don't need one
+    at all.</strong> The long version, as a chain of questions:
+  </p>
+
+  <div class="qa">
+    <h3>Can I parametrize a piece of the surface?</h3>
+    <p>
+      Yes, unconditionally, wherever <span class="formula">∇f ≠ 0</span>. That is the
+      <strong>implicit function theorem</strong> verbatim: if, say,
+      <span class="formula">∂f/∂z ≠ 0</span> at a point, then near that point the surface is
+      exactly a graph <span class="formula">z = g(x, y)</span> — a smooth chart with
+      parametrization <span class="formula">(u, v) ↦ (u, v, g(u,v))</span>. The surface is
+      covered by such charts; that is literally what makes it a manifold. Every local operation
+      you care about (tangent planes, geodesic steps, texture decals) is available through these.
+    </p>
+
+    <h3>Can one chart cover the whole surface?</h3>
+    <p>
+      No, whenever the level set is compact (a sphere, a torus, a tangle — the typical case for
+      polynomial <var>f</var> with bounded components). A single parametrization from a planar
+      domain would make the surface homeomorphic to an open subset of ℝ², and a compact
+      surface never is (it would have to be both compact and open in ℝ², hence empty).
+      The sphere already defeats it — that's why every world map either cuts or distorts.
+      This isn't a limitation of technique; it's topology.
+    </p>
+
+    <h3>What's the best a global structure can do, then?</h3>
+    <p>
+      An <em>atlas</em> of overlapping charts (which the mesh effectively is), or a parametrization
+      over a canonical domain with controlled seams/singular points. The
+      <strong>uniformization theorem</strong> classifies what's canonically possible: genus 0
+      surfaces map conformally to the sphere, genus 1 to a flat torus, genus ≥ 2 to hyperbolic
+      quotients. There is a mature computational literature that takes a triangle mesh and
+      produces such structures — conformal parametrization, spherical parametrization,
+      global seamless quad layouts. It's genuinely beautiful work, and all of it
+      <em>starts from a mesh</em>, which is another argument for §3 producing one.
+    </p>
+    <p>
+      But note the fine print for this sim: any such global structure is computed <em>per
+      surface</em>. The moment the user drags <var>c</var> across a critical value of <var>f</var>,
+      the genus changes (<strong>Morse theory</strong>: crossing a critical point attaches a
+      handle or splits a component), and the previous parametrization isn't just stale — its
+      domain is the wrong topological type. A “parametrize once, reuse forever” plan cannot
+      survive a <var>c</var>-slider. Parametrization, if ever built, is a per-frame derived
+      artifact, not a foundation.
+    </p>
+
+    <h3>So how do flows work without one?</h3>
+    <p>
+      Extrinsically — work in ℝ³ and never leave the surface, using only <var>f</var> and
+      ∇<var>f</var>. Two operations do everything:
+    </p>
+    <div class="formula-block">tangent projection    P(x) = I − n nᵀ,   n = ∇f(x)/|∇f(x)|
+                      (any ambient vector field V becomes a surface field P·V)
+
+Newton retraction     x ← x − f(x)·∇f(x)/|∇f(x)|²
+                      (pulls a drifted point back onto f = c, quadratically)</div>
+    <p>
+      A trajectory is then: step the ODE with the projected field (RK4), retract, repeat. An
+      arrow is: particle position + any field evaluated there, projected or not (surface normals
+      themselves are the simplest “arrows sticking out of the manifold” — they're just ∇<var>f</var>).
+      This is the same predict–project machinery as M3/M4, one more reason those papers are on
+      the list. For full PDEs on the surface (heat flow, reaction–diffusion patterns, advection
+      of dye), the <strong>closest point method</strong> solves them on an ambient grid around the
+      surface with <em>standard 3D stencils</em> — no parametrization, no mesh operators — which
+      composes perfectly with a CUDA grid pipeline that already exists for M1.
+    </p>
+  </div>
+
+  <div class="callout amber">
+    <span class="co-label">Verdict on parametrization</span>
+    <p>
+      Local charts: guaranteed by the implicit function theorem wherever ∇<var>f</var> ≠ 0.
+      One global chart: topologically impossible for closed surfaces. Global atlases/quad
+      layouts: possible post-meshing, expensive, and invalidated every time <var>c</var> crosses
+      a critical value. <strong>Design the sim so nothing needs a parametrization:</strong>
+      mesh for display, particles + projection/retraction for flows, closest-point for PDEs.
+      The gradient ∇<var>f</var> is the whole API.
+    </p>
+  </div>
+
+  <p class="papers-label">Papers &amp; texts</p>
+  <ul class="papers">
+    <li><strong>Milnor</strong>, <em>Morse Theory</em>, Princeton University Press, 1963. (topology change across critical values — read ch. 1 only)</li>
+    <li><strong>do Carmo</strong>, <em>Differential Geometry of Curves and Surfaces</em>, 1976. (regular surfaces, charts, the implicit function theorem in exactly this setting — §2-2, §2-3)</li>
+    <li><strong>Floater, Hormann</strong>, “Surface Parameterization: A Tutorial and Overview,” in <em>Advances in Multiresolution for Geometric Modelling</em>, Springer, 2005. (the survey to read first on mesh parametrization)</li>
+    <li><strong>Gu, Yau</strong>, “Global Conformal Surface Parameterization,” <em>Symposium on Geometry Processing</em>, 2003.</li>
+    <li><strong>Praun, Hoppe</strong>, “Spherical Parametrization and Remeshing,” <em>ACM SIGGRAPH</em>, 2003. (genus 0)</li>
+    <li><strong>Bommes, Zimmer, Kobbelt</strong>, “Mixed-Integer Quadrangulation,” <em>ACM SIGGRAPH</em>, 2009; and <strong>Kälberer, Nieser, Polthier</strong>, “QuadCover,” <em>Computer Graphics Forum</em>, 2007. (global quad layouts)</li>
+    <li><strong>Ruuth, Merz</strong>, “A Simple Embedding Method for Solving Partial Differential Equations on Surfaces,” <em>Journal of Computational Physics</em> 227, 2008. (the closest point method)</li>
+    <li><strong>Bertalmío, Cheng, Osher, Sapiro</strong>, “Variational Problems and Partial Differential Equations on Implicit Surfaces,” <em>Journal of Computational Physics</em> 174, 2001. (PDEs directly on level sets)</li>
+    <li><strong>Zhang, Mischaikow, Turk</strong>, “Vector Field Design on Surfaces,” <em>ACM Transactions on Graphics</em> 25(4), 2006. (designing the fields you'll flow along)</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <span class="sec-label">§6 · Reading order</span>
+  <h2>Suggested reading sequence</h2>
+  <p>Ordered so each paper sets up the next; the first three are enough to start building.</p>
+  <ol class="reading">
+    <li><strong>Lorensen &amp; Cline 1987</strong> — the backbone algorithm; short and readable.</li>
+    <li><strong>do Carmo §2-2/2-3</strong> — regular surfaces &amp; the implicit function theorem; makes §5 rigorous in ~20 pages.</li>
+    <li><strong>NVIDIA marchingCubes sample + Dyken 2008</strong> — the CUDA formulation and the interop pattern.</li>
+    <li><strong>Witkin &amp; Heckbert 1994</strong> — particles, projection, and constraint maintenance; the flow layer's toolbox.</li>
+    <li><strong>Ju et al. 2002</strong> — dual contouring, for when mesh quality starts to matter.</li>
+    <li><strong>Milnor ch. 1</strong> — why the surface changes topology under the <var>c</var>-slider, and why that's a feature.</li>
+    <li><strong>Ruuth &amp; Merz 2008</strong> — PDEs on the surface with the grid you already have.</li>
+    <li><strong>Floater &amp; Hormann 2005</strong> — read last, to confirm parametrization is a luxury, not a dependency.</li>
+  </ol>
+</section>
+</main>
+</body>
+</html>

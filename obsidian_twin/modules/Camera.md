@@ -31,6 +31,9 @@ Knobs:
 - `mode` — `Orbit` (spherical coords around `orbitCenter`, WASD rotate, Q/E zoom) or
   `Free` (WASD translate; rotation TODO).
 - `processInput(GLFWwindow*, float dt)` — called by [[App]], dt from its single clock.
+- `inputEnabled` (true) — when false, `processInput` is a no-op; for sims that
+  repurpose WASD/QE ([[riemann-sphere]]'s plane mode). A sim that clears it must
+  restore it.
 - `fovDeg` (55), `aspect` (set by App each frame), `nearPlane`, `farPlane`.
 - `orbitRadius` (3) — current orbit distance; sims may set it in `init()`.
 - `orbitRadiusMin` (0.1), `orbitSlowZone` (0 = off) — orbit constraints: the radius

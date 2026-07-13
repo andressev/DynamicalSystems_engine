@@ -26,6 +26,8 @@ Sims never construct one; query it via `app.window()`:
   callback (which also updates the GL viewport).
 - `cursorPosNormalized()` — [0,1]², origin bottom-left (used by [[riemann-sphere]]'s
   follow-mouse coefficients).
+- `keyDown(int key)` — true while held; takes uppercase ASCII (GLFW letter/digit key
+  codes match ASCII). Lets sims poll keys without touching GLFW directly.
 - `handle()` — raw `GLFWwindow*` for [[Camera]] input and the ImGui backend.
 
 ## Notes

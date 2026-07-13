@@ -9,6 +9,7 @@
 
 #include <gtc/matrix_transform.hpp>
 #include <imgui.h>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -44,7 +45,11 @@ public:
             engine::Shapes::sphereVertices(100, 100, kSphereRadius),
             engine::Shapes::sphereIndices(100, 100),
             std::vector<int>{3, 3, 2});
-
+        planeMesh = std::make_unique<engine::Mesh>(
+            engine::Shapes::planeVertices(),
+            engine::Shapes::planeIndices(),
+            std::vector<int>{3});
+        
         axisMesh = std::make_unique<engine::Mesh>(
             engine::Shapes::axisVertices(),
             engine::Shapes::axisIndices(),
@@ -67,27 +72,52 @@ public:
     {
         time += dt;
         mouse = app->window().cursorPosNormalized() * 2.0f - 1.0f; // [-1,1]^2
+
+        // plane mode: the quad never moves — WASD displaces the window center
+        // in the complex plane and Q/E scale it (both in domain units, so pan
+        // speed shrinks as you zoom in)
+        if (!sphereMode && !ImGui::GetIO().WantCaptureKeyboard) {
+            const engine::Window& win = app->window();
+            float pan = planeScale * dt;
+            if (win.keyDown('A')) planeCenter.x -= pan;
+            if (win.keyDown('D')) planeCenter.x += pan;
+            if (win.keyDown('S')) planeCenter.y -= pan;
+            if (win.keyDown('W')) planeCenter.y += pan;
+            if (win.keyDown('Q')) planeScale *= std::exp(-dt); // zoom in
+            if (win.keyDown('E')) planeScale *= std::exp(dt);  // zoom out
+        }
     }
 
     void render(const engine::Camera& camera) override
     {
-        glm::mat4 view = camera.getViewMatrix();
-        glm::mat4 projection = camera.getProjectionMatrix();
+        // plane mode ignores the camera: the -90° X rotation alone maps the
+        // XZ quad onto NDC, so it always fills the window exactly
+        glm::mat4 view = sphereMode ? camera.getViewMatrix() : glm::mat4(1.0f);
+        glm::mat4 projection = sphereMode ? camera.getProjectionMatrix() : glm::mat4(1.0f);
 
-        sphereShader.use();
-        sphereShader.setMat4("model", model);
-        sphereShader.setMat4("view", view);
-        sphereShader.setMat4("projection", projection);
-        sphereShader.setFloat("u_time", time);
-        sphereShader.setVec2("u_mouse", mouse);
-        sphereMesh->draw(GL_TRIANGLES);
+        functionShader.use();
+        functionShader.setMat4("model", model);
+        functionShader.setMat4("view", view);
+        functionShader.setMat4("projection", projection);
+        functionShader.setFloat("u_time", time);
+        functionShader.setVec2("u_mouse", mouse);
 
-        glLineWidth(4.0f);
-        axisShader.use();
-        axisShader.setMat4("model", model);
-        axisShader.setMat4("view", view);
-        axisShader.setMat4("projection", projection);
-        axisMesh->draw(GL_LINES);
+        if (sphereMode) {
+            sphereMesh->draw(GL_TRIANGLES);
+
+            glLineWidth(4.0f);
+            axisShader.use();
+            axisShader.setMat4("model", model);
+            axisShader.setMat4("view", view);
+            axisShader.setMat4("projection", projection);
+            axisMesh->draw(GL_LINES);
+        }
+        else {
+            functionShader.setVec2("u_center", planeCenter);
+            functionShader.setVec2("u_scale",
+                glm::vec2(planeScale * app->window().aspect(), planeScale));
+            planeMesh->draw(GL_TRIANGLES);
+        }
     }
 
     void drawUI() override
@@ -100,6 +130,24 @@ public:
         apply |= ImGui::Button("Apply");
         if (apply)
             applyFunction(funcBuf);
+
+        // shader hot-swap: coords() is baked into the fragment source, so a
+        // mode change has to rebuild it; plane mode repurposes WASD/QE, so the
+        // camera stops listening while it's active
+        if (ImGui::Checkbox("Sphere mode", &sphereMode)) {
+            app->camera().inputEnabled = sphereMode;
+            applyFunction(funcBuf);
+        }
+        if (!sphereMode) {
+            ImGui::SameLine();
+            if (ImGui::Button("Reset pos")) {
+                planeCenter = glm::vec2(0.0f);
+                planeScale = 2.0f;
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("center %.3g%+.3gi  scale %.3g",
+                                planeCenter.x, planeCenter.y, planeScale);
+        }
 
         if (!parseError.empty())
             ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", parseError.c_str());
@@ -121,11 +169,26 @@ private:
 
         std::string f = "vec2 f(vec2 z) {\n    return "
                       + expr.glsl({"z", "vec2(u_time, 0.0)", "u_mouse"}) + ";\n}";
+        // stereographic projection from north pole (0,0,1) onto the complex
+        // plane in sphere mode; plane mode maps the fullscreen quad through a
+        // pan/zoom window (u_scale carries zoom * aspect so units stay square)
+        const char* coords = sphereMode
+            ? "vec2 coords(vec3 p) {\n"
+              "    p = normalize(p);\n"
+              "    return vec2(p.x, p.y) / (1.0 - p.z + 1e-6);\n"
+              "}"
+            : "uniform vec2 u_center;\n"
+              "uniform vec2 u_scale;\n"
+              "vec2 coords(vec3 p) {\n"
+              "    return u_center + vec2(p.x, p.z) * u_scale;\n"
+              "}";
+
         std::string frag = fragTemplate;
         replaceOnce(frag, "//__COMPLEX_LIB__", engine::Expression::glslComplexLib());
         replaceOnce(frag, "//__F__", f);
+        replaceOnce(frag, "//__coords__", coords);
 
-        sphereShader = engine::Shader::fromSources(vertexSrc, frag);
+        functionShader = engine::Shader::fromSources(vertexSrc, frag);
     }
 
     static void replaceOnce(std::string& text, const std::string& placeholder,
@@ -138,10 +201,15 @@ private:
 
     engine::App* app = nullptr;
     std::unique_ptr<engine::Mesh> sphereMesh;
+    std::unique_ptr<engine::Mesh> planeMesh;
     std::unique_ptr<engine::Mesh> axisMesh;
-    engine::Shader sphereShader;
+    engine::Shader functionShader;
     engine::Shader axisShader;
     glm::mat4 model{1.0f};
+
+    bool sphereMode = true;
+    glm::vec2 planeCenter{0.0f}; // complex number at the screen center
+    float planeScale = 2.0f;     // half-height of the visible domain window
 
     std::string vertexSrc;
     std::string fragTemplate;

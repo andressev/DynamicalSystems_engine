@@ -28,6 +28,10 @@ public:
     // cursor position normalized to [0,1] x [0,1], origin bottom-left
     glm::vec2 cursorPosNormalized() const;
 
+    // true while the key is held; pass an uppercase ASCII character
+    // (GLFW key codes match ASCII for letters/digits, e.g. keyDown('W'))
+    bool keyDown(int key) const;
+
     GLFWwindow* handle() const { return window; }
 
 private:

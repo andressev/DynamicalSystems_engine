@@ -13,6 +13,9 @@ public:
     enum class Mode { Orbit, Free };
 
     Mode mode = Mode::Orbit;
+    // When false, processInput ignores the keyboard entirely — for sims that
+    // repurpose the movement keys. A sim that clears it must restore it.
+    bool inputEnabled = true;
     glm::vec3 position{0.0f, 0.0f, 3.0f};
     glm::vec3 front{0.0f, 0.0f, -1.0f};
     glm::vec3 up{0.0f, 1.0f, 0.0f};

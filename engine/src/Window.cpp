@@ -75,6 +75,11 @@ glm::vec2 Window::cursorPosNormalized() const
     return glm::vec2((float)mx / w, 1.0f - (float)my / h);
 }
 
+bool Window::keyDown(int key) const
+{
+    return glfwGetKey(window, key) == GLFW_PRESS;
+}
+
 void Window::framebufferSizeCallback(GLFWwindow* window, int width, int height)
 {
     glViewport(0, 0, width, height);

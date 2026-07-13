@@ -103,6 +103,8 @@ void App::drawAppUI()
 {
     const auto& names = registry.names();
 
+    // start collapsed each launch so the view opens unobstructed
+    ImGui::SetNextWindowCollapsed(true, ImGuiCond_Once);
     ImGui::Begin("Explorer");
     ImGui::Text("%.1f FPS (%.2f ms)", ImGui::GetIO().Framerate, 1000.0f / ImGui::GetIO().Framerate);
 

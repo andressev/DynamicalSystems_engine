@@ -7,6 +7,9 @@ namespace engine {
 
 void Camera::processInput(GLFWwindow* window, float dt)
 {
+    if (!inputEnabled)
+        return;
+
     float cameraSpeed = speed * dt;
 
     if (mode == Mode::Orbit)

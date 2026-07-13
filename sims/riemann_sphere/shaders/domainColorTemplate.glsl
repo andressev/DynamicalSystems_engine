@@ -15,11 +15,11 @@ uniform vec2 u_mouse;  // cursor as a complex number in [-1,1]^2 (variable m)
 
 //__F__
 
+//__coords__
+
 void main()
 {
-    // stereographic projection from north pole (0,0,1) onto the complex plane
-    vec3 p = normalize(localPos);
-    vec2 z = vec2(p.x, p.y) / (1.0 - p.z + 1e-6);
+    vec2 z = coords(localPos);
 
     vec2 fz = f(z);
 
