@@ -50,6 +50,16 @@ class SurfaceRendererRayMarchedSim : public engine::Sim {
 public:
     const char* name() const override { return "surface_renderer_ray_marched"; }
 
+    // hand the camera back if destroyed mid-ride (sim switch from the menu)
+    ~SurfaceRendererRayMarchedSim() override
+    {
+        if (app && followCam)
+        {
+            app->camera().inputEnabled = true;
+            app->camera().up = glm::vec3(0.0f, 1.0f, 0.0f);
+        }
+    }
+
     void init(engine::App& app) override
     {
         this->app = &app;
@@ -83,7 +93,57 @@ public:
     {
         time += dt;
         if (particleDemo)
+        {
             particle.update(dt, time);
+            if (followCam)
+                updateFollowCam(dt);
+        }
+    }
+
+    // Chase camera riding the particle: hover followHeight above the surface
+    // (along the normal), trail slightly behind the motion direction, look a
+    // bit ahead of the particle. Exponentially smoothed against RK4 jitter.
+    void updateFollowCam(float dt)
+    {
+        engine::Camera& cam = app->camera();
+        glm::vec3 p = particle.position();
+
+        glm::vec3 g = gradF(p, time);
+        glm::vec3 n = glm::dot(g, g) > 1e-12f ? glm::normalize(g)
+                                              : glm::vec3(0.0f, 1.0f, 0.0f);
+        glm::vec3 vel = particle.field ? particle.field(p, time) : glm::vec3(0.0f);
+        glm::vec3 tangential = vel - glm::dot(vel, n) * n;
+        if (glm::dot(tangential, tangential) > 1e-10f)
+            followDir = glm::normalize(tangential); // keep last dir at stagnation
+
+        glm::vec3 wantPos = p + n * followHeight - followDir * (0.6f * followHeight);
+        glm::vec3 wantFront = glm::normalize(p + followDir * 0.8f - wantPos);
+
+        float k = 1.0f - std::exp(-8.0f * dt);
+        camPosSmooth += (wantPos - camPosSmooth) * k;
+        camFrontSmooth += (wantFront - camFrontSmooth) * k;
+        camUpSmooth += (n - camUpSmooth) * k;
+
+        cam.position = camPosSmooth;
+        cam.front = glm::normalize(camFrontSmooth);
+        cam.up = glm::normalize(camUpSmooth);
+    }
+
+    void setFollowCam(bool enabled)
+    {
+        followCam = enabled;
+        app->camera().inputEnabled = !enabled; // WASD/QE belong to the orbit cam
+        if (enabled)
+        {
+            // start the smoothing from wherever the camera currently is
+            camPosSmooth = app->camera().position;
+            camFrontSmooth = app->camera().front;
+            camUpSmooth = app->camera().up;
+        }
+        else
+        {
+            app->camera().up = glm::vec3(0.0f, 1.0f, 0.0f);
+        }
     }
 
     void render(const engine::Camera& camera) override
@@ -159,8 +219,13 @@ public:
         ImGui::DragFloat("domain radius", &range, 0.05f, 0.5f, 50.0f);
 
         ImGui::Separator();
-        if (ImGui::Checkbox("flow demo (particle on the surface)", &particleDemo) && particleDemo)
-            resetParticle();
+        if (ImGui::Checkbox("flow demo (particle on the surface)", &particleDemo))
+        {
+            if (particleDemo)
+                resetParticle();
+            else if (followCam)
+                setFollowCam(false); // hand the camera back with the demo
+        }
         if (particleDemo)
         {
             ImGui::SameLine();
@@ -189,6 +254,16 @@ public:
 
             ImGui::Checkbox("trail", &particle.trailEnabled);
             ImGui::DragFloat("step size", &particle.stepSize, 0.001f, 0.0005f, 0.2f, "%.4f");
+
+            bool follow = followCam;
+            if (ImGui::Checkbox("follow cam (ride the particle)", &follow))
+                setFollowCam(follow);
+            if (followCam)
+            {
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(120.0f);
+                ImGui::DragFloat("height##cam", &followHeight, 0.01f, 0.05f, 3.0f);
+            }
         }
 
         ImGui::TextWrapped(
@@ -308,6 +383,13 @@ private:
     engine::Expression cpuExpr;      // CPU twin of the shader's f
     engine::SolutionCurve particle;
     bool particleDemo = false;
+    // follow-cam state
+    bool followCam = false;
+    float followHeight = 0.4f;
+    glm::vec3 followDir{1.0f, 0.0f, 0.0f};       // last motion direction
+    glm::vec3 camPosSmooth{0.0f};
+    glm::vec3 camFrontSmooth{0.0f, 0.0f, -1.0f};
+    glm::vec3 camUpSmooth{0.0f, 1.0f, 0.0f};
     // typed ambient field V(x,y,z,t), one expression per component
     char vBufX[128] = "-y";
     char vBufY[128] = "x";

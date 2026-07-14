@@ -63,6 +63,9 @@ void Camera::orbitMode(GLFWwindow* window, float cameraSpeed)
     position.y = orbitCenter.y + orbitRadius * cos(orbitPhi);
     position.z = orbitCenter.z + orbitRadius * sin(orbitPhi) * cos(orbitTheta);
     front = glm::normalize(orbitCenter - position);
+    // orbit owns its whole basis: reset up so a mode that tilted it (e.g. a
+    // sim's follow cam riding a surface normal) can't leave orbit rolled
+    up = glm::vec3(0.0f, 1.0f, 0.0f);
 }
 
 glm::mat4 Camera::getViewMatrix() const

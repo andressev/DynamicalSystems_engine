@@ -74,6 +74,10 @@ the bracketing interval, shades from the central-difference gradient, and writes
   the ambient field $V(x,y,z,t)$ is typed as three component expressions (default
   swirl $(-y,\,x,\,0.4)$), parsed by [[Expression]] and tangent-projected; trail
   toggle, RK4 step-size drag, reset button.
+- Follow cam: rides the particle — position $p + h\,n - 0.6h\,d$ (normal offset $h$
+  adjustable, $d$ = motion direction), looking ahead along $d$, up $= n$, all
+  exponentially smoothed. Takes the camera via `Camera::inputEnabled = false`;
+  orbit control returns when toggled off (or when the demo is).
 - WASD rotate, Q/E zoom (orbit camera).
 
 ## Future

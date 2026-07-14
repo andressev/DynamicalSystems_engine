@@ -42,6 +42,9 @@ Knobs:
   camera outside the sphere and slow it near the surface.
 
 ## Notes
+- Orbit recomputes its full basis every frame — `position`, `front`, **and `up`**
+  (reset to +Y), so code that steers the camera directly (e.g. a follow cam using a
+  surface normal as up) can't leave orbit mode rolled sideways afterwards.
 - Orbit phi is clamped to (0.05, π−0.05) to avoid the `lookAt` up-vector singularity at
   the poles.
 - Orbit radius is clamped to `orbitRadiusMin` every frame (not just on Q presses).
