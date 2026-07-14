@@ -85,6 +85,8 @@ sphere (hue = argument, brightness = modulus), live:
 - Controls: WASD orbits, Q/E zooms (slows near the surface), Esc quits.
 
 ### surface_renderer_ray_marched — implicit surfaces `f(x,y,z) = c`
+![Raymarchsurfaces sphere sim](docs/screenshots/surface_renderer_ray_marched.png)
+
 
 Type a real function of three variables and a level `c`, and see the level set — the
 surface `f(x,y,z) = c` carves out of space — raymarched per pixel with no mesh at all:
