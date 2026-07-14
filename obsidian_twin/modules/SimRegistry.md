@@ -20,8 +20,11 @@ Ordered name → factory list mapping sim names to their factory functions
 
 ## How to use it
 Executables register sims before `App::run`:
-- `add(name, factory)` — registration order = picker order.
-- `create(name)` / `createByIndex(i)` / `indexOf(name)` / `names()` / `empty()`
+- `add(name, factory, thumbnailPath = "")` — registration order = picker order;
+  `thumbnailPath` is the image for [[App]]'s menu tile (explorer passes
+  `THUMBS_DIR "<name>.png"` → `docs/screenshots/`; empty/missing = plain tile).
+- `create(name)` / `createByIndex(i)` / `indexOf(name)` / `names()` /
+  `thumbnailPaths()` / `empty()`
 
 ## Notes
 - Registration is explicit from each executable's `main()` — see [[sim-lifecycle]] for

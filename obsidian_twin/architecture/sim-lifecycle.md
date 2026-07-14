@@ -19,7 +19,9 @@ linker strips unreferenced static initializers (see
 - `<name>_standalone` executable (gated by `BUILD_STANDALONE_SIMS`, default ON).
 
 ## Runtime switching
-[[App]]::switchTo(index):
+Multi-sim builds start with **no active sim**: [[App]] shows the thumbnail picker menu
+until a tile is clicked, and the Explorer panel's "menu" button destroys the active sim
+(end of frame) and returns to it. Then [[App]]::switchTo(index):
 1. `activeSim.reset()` — old sim's destructor frees its Meshes/Shaders while the GL
    context is still current.
 2. `registry.createByIndex(i)` — factory builds the new sim (no GL work in constructors).

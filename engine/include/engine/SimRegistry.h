@@ -14,18 +14,23 @@ using SimFactory = std::unique_ptr<Sim> (*)();
 // function in its header and the app's main() calls add() for the sims it wants.
 class SimRegistry {
 public:
-    void add(const std::string& name, SimFactory factory);
+    // thumbnailPath (optional) is an image shown on the sim-picker menu;
+    // a missing/empty path falls back to a plain named tile.
+    void add(const std::string& name, SimFactory factory,
+             const std::string& thumbnailPath = "");
 
     std::unique_ptr<Sim> create(const std::string& name) const;
     std::unique_ptr<Sim> createByIndex(int index) const;
     int indexOf(const std::string& name) const; // -1 if unknown
 
     const std::vector<std::string>& names() const { return simNames; }
+    const std::vector<std::string>& thumbnailPaths() const { return thumbPaths; }
     bool empty() const { return simNames.empty(); }
 
 private:
     std::vector<std::string> simNames;
     std::vector<SimFactory> factories;
+    std::vector<std::string> thumbPaths;
 };
 
 } // namespace engine

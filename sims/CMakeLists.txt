@@ -28,3 +28,4 @@ function(add_sim NAME HEADER FACTORY)
 endfunction()
 
 add_subdirectory("riemann_sphere")
+add_subdirectory("surface_renderer_ray_marched")

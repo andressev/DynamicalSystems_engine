@@ -6,6 +6,7 @@
 #include <engine/SimRegistry.h>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace engine {
 
@@ -23,19 +24,31 @@ public:
     Window& window() { return win; }
     Camera& camera() { return cam; }
 
-    // Runs the main loop with startSim active (first registered sim if empty).
-    // Returns the process exit code.
+    // Runs the main loop. With one registered sim (or an explicit startSim)
+    // that sim starts immediately; with several and no startSim, the loop
+    // opens on the thumbnail picker menu. Returns the process exit code.
     int run(const std::string& startSim = "");
 
 private:
+    // GL texture for one menu tile, loaded from SimRegistry's thumbnailPath
+    struct Thumbnail {
+        unsigned int texture = 0; // 0 = none; menu shows a plain named tile
+        int width = 0;
+        int height = 0;
+    };
+
     Window win;
     Camera cam;
     SimRegistry registry;
     std::unique_ptr<Sim> activeSim;
     int activeIndex = -1;
+    std::vector<Thumbnail> thumbnails;
+    bool wantMenu = false; // set by the UI, applied after the frame's draw
 
     void switchTo(int index);
+    void loadThumbnails();
     void drawAppUI();
+    void drawMenuUI();
 };
 
 } // namespace engine

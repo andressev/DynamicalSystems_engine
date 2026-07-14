@@ -3,9 +3,13 @@
 ## Now
 <!-- Max ~5 lines. Current milestone, what's mid-flight, next step. Update as you go —
      this is the first thing read at session start ([[Home]] routing). -->
-- Between M2 and M3: module/vault system just restructured ([[0004-modules-vs-simulations]],
-  [[0005-vault-as-ai-navigation]]); nothing mid-flight in code.
-- Next: start M3 — `Integrator` (math layer, via `/new-module`), then `VectorFieldSim`.
+- Level-set track opened (2026-07-13): method survey written
+  (`docs/level-set-meshing-proposal.html`), [[surface-renderer-ray-marched]] added as
+  the raymarched reference view. [[riemann-sphere]] gained a flat plane mode.
+- Next on this track: marching-cubes mesh sim (the proposal's M1), then CUDA (M4);
+  symbolic ∇f in [[Expression]] is the highest-leverage enabler.
+- M3 (`Integrator`, `VectorFieldSim`) still pending; flows will land on the meshed
+  level sets too.
 
 ## M1 — foundation (done, 2026-07)
 Engine static lib ([[App]], [[Window]], [[Sim]], [[SimRegistry]], [[Camera]], [[Shader]],

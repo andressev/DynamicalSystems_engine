@@ -1,8 +1,8 @@
 # Mathematics Engine
 
-An engine for exploring mathematics visually,  complex functions on the riemann sphere, ODEs, flows on
-manifolds and vector fields next — built on OpenGL, with CUDA interop for GPU compute on
-the roadmap. 
+An engine for exploring mathematics visually — complex functions on the Riemann sphere,
+raymarched implicit surfaces `f(x,y,z) = c`; ODEs, flows on manifolds and vector fields
+next — built on OpenGL, with CUDA interop for GPU compute on the roadmap. 
 Simulations ("sims") are self-contained modules on top of a small engine
 library, and can be run all together from an explorer app or as standalone executables.
 
@@ -13,7 +13,7 @@ library, and can be run all together from an explorer app or as standalone execu
 |---|---|
 | `engine/` | Static library: Window, Shader, Camera, Mesh, Shapes, Expression (function parser → CPU eval + GLSL codegen), Sim interface, SimRegistry, App loop, glad + ImGui |
 | `sims/<name>/` | One sim per folder: a `Sim` subclass, its own `shaders/`, its own CMakeLists |
-| `apps/explorer/` | Multi-sim executable with a runtime sim picker |
+| `apps/explorer/` | Multi-sim executable; opens on a thumbnail menu of all registered sims |
 | `apps/standalone/` | Generic single-sim `main.cpp`, compiled once per sim |
 | `External/` | Vendored dependencies (no installs needed) |
 | `obsidian_twin/` | Markdown mirror of the architecture — open it in Obsidian to navigate the design, decision records and roadmap |
@@ -41,11 +41,12 @@ Presets: `x64-debug`, `x64-release`, `x86-debug`, `x86-release`.
 ## Run
 
 ```powershell
-# all sims, runtime picker
+# all sims, thumbnail picker menu
 .\out\build\x64-debug\apps\explorer\explorer.exe
 
 # one sim only
 .\out\build\x64-debug\sims\riemann_sphere\riemann_sphere_standalone.exe
+.\out\build\x64-debug\sims\surface_renderer_ray_marched\surface_renderer_ray_marched_standalone.exe
 ```
 
 ## Dependencies
@@ -78,7 +79,31 @@ sphere (hue = argument, brightness = modulus), live:
 - The typed expression is parsed to an AST, compiled to GLSL and hot-swapped into the
   fragment shader in one frame; parse errors show in red while the previous function
   keeps rendering.
+- Plane mode toggle: the same function graphed on the flat complex plane instead of the
+  sphere — WASD pans, Q/E zooms the domain window (the geometry never moves, only the
+  coordinates do).
 - Controls: WASD orbits, Q/E zooms (slows near the surface), Esc quits.
+
+### surface_renderer_ray_marched — implicit surfaces `f(x,y,z) = c`
+
+Type a real function of three variables and a level `c`, and see the level set — the
+surface `f(x,y,z) = c` carves out of space — raymarched per pixel with no mesh at all:
+
+- Same expression language as the Riemann sphere sim, over `x, y, z` and `t` (time);
+  the real part of the value is the field. Try the default tangle cube
+  `x^4 + y^4 + z^4 - 5*(x^2 + y^2 + z^2)`, a torus
+  `(3-sqrt(x^2+y^2))^2 + z^2 - 1`, or `sin(x)*sin(y)*sin(z)`.
+- `c` is a slider (a shader uniform, so no recompile): sweep it and watch the surface
+  change topology live at the critical values of `f` — components merging, handles
+  forming and splitting.
+- Because a typed `f` is not a signed distance field, rays are marched with fixed-step
+  sign-change detection plus bisection refinement, not sphere tracing — arbitrary
+  equations stay robust.
+- Two-sided shading tells the sides apart (teal: `f > c`, amber: `f < c`); a `domain
+  radius` control bounds the searched region.
+- Method survey (marching cubes, dual contouring, particles, the parametrization
+  question) with paper references: `docs/level-set-meshing-proposal.html` — the meshed,
+  CUDA-accelerated sibling sim is the planned next step.
 
 
 Details, decision records and module notes live in `obsidian_twin/` (best viewed in Obsidian).

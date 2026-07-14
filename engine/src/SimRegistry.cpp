@@ -2,10 +2,12 @@
 
 namespace engine {
 
-void SimRegistry::add(const std::string& name, SimFactory factory)
+void SimRegistry::add(const std::string& name, SimFactory factory,
+                      const std::string& thumbnailPath)
 {
     simNames.push_back(name);
     factories.push_back(factory);
+    thumbPaths.push_back(thumbnailPath);
 }
 
 std::unique_ptr<Sim> SimRegistry::create(const std::string& name) const

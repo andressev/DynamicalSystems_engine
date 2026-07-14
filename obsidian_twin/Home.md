@@ -27,7 +27,7 @@ module/sim/math note lists its source files under `code:` in frontmatter — ver
 the drift checker, so a green check means the pointers are current.
 
 ## Functionality
-On the explore mode, from main an [[App]] is started where simulations can be alternated, on the app a loop is run wich calls the current sim update.  
+On the explore mode, from main an [[App]] is started where simulations can be alternated, on the app a loop is run wich calls the current sim update. The explorer opens on a thumbnail picker menu (tiles from `docs/screenshots/<sim>.png`); the Explorer panel's "menu" button returns to it.
 
 Each sim holds their own open gl data, and when swithcing is released. 
 
@@ -61,6 +61,7 @@ core is the skeleton sims don't choose). New modules via the `/new-module` skill
 
 ## Sims
 - [[riemann-sphere]] — domain coloring of complex polynomials on the Riemann sphere
+- [[surface-renderer-ray-marched]] — raymarched implicit surfaces f(x,y,z) = c, live c sweep
 
 ## Math
 Domain concepts as first-class notes (idea / equations / where implemented / pitfalls);
