@@ -8,8 +8,11 @@
   the raymarched reference view. [[riemann-sphere]] gained a flat plane mode.
 - Next on this track: marching-cubes mesh sim (the proposal's M1), then CUDA (M4);
   symbolic ∇f in [[Expression]] is the highest-leverage enabler.
-- M3 (`Integrator`, `VectorFieldSim`) still pending; flows will land on the meshed
-  level sets too.
+- M3 effectively started: [[SolutionCurve]] module (RK4 particle + trail, gfx layer)
+  added, demoed as a surface flow in [[surface-renderer-ray-marched]] (tangent
+  projection + retraction feedback over CPU `Expression::eval`). `evalReal` +
+  symbolic ∇f in [[Expression]] remain the enablers for many-particle flows;
+  `VectorFieldSim` still pending.
 
 ## M1 — foundation (done, 2026-07)
 Engine static lib ([[App]], [[Window]], [[Sim]], [[SimRegistry]], [[Camera]], [[Shader]],

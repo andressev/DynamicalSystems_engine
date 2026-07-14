@@ -29,7 +29,10 @@ Attach = hold a `std::unique_ptr<engine::Mesh>` member, create in `init`:
    VAO and `glDrawElements`.
 3. Reference sim: [[riemann-sphere]] (sphere + axis lines).
 
-Also: `indexCount()`, `vbo()` (the CUDA interop point).
+Also: `indexCount()`, `vbo()` (the CUDA interop point), and
+`updateData(vertices, indices)` — re-upload both buffers (dynamic draw) for geometry
+that changes per frame; the attribute layout stays as constructed. Used by
+[[SolutionCurve]]'s trail.
 
 ## Notes
 - No raw `glGen*`/`glDelete*` in sims — GL buffer ownership lives here and in [[Shader]]

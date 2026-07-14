@@ -70,6 +70,18 @@ void Mesh::draw(GLenum mode) const
     glDrawElements(mode, count, GL_UNSIGNED_INT, 0);
 }
 
+void Mesh::updateData(const std::vector<float>& vertices,
+                      const std::vector<unsigned int>& indices)
+{
+    glBindVertexArray(VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_DYNAMIC_DRAW);
+    glBindVertexArray(0);
+    count = (int)indices.size();
+}
+
 void Mesh::release()
 {
     if (VAO != 0)

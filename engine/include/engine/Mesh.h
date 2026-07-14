@@ -24,6 +24,11 @@ public:
 
     void draw(GLenum mode = GL_TRIANGLES) const;
 
+    // Re-upload vertex + index data (dynamic geometry, e.g. a growing trail).
+    // The attribute layout is fixed at construction; buffers reallocate as needed.
+    void updateData(const std::vector<float>& vertices,
+                    const std::vector<unsigned int>& indices);
+
     int indexCount() const { return count; }
     unsigned int vbo() const { return VBO; }
 

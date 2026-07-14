@@ -45,26 +45,35 @@ the bracketing interval, shades from the central-difference gradient, and writes
 - [[Shapes]] — plane (as the fullscreen quad) and axis geometry.
 - [[Camera]] — orbit camera; only its matrices are used (the quad ignores MVP; rays are
   built by unprojection). `init` re-enables `inputEnabled` defensively.
+- [[SolutionCurve]] — the flow-demo particle: its field evaluates a CPU copy of the
+  parsed $f$ (an ambient swirl tangent-projected via $V - (V\cdot n)n$, plus a
+  $-F\,\nabla f/|\nabla f|^2$ feedback term that keeps RK4 glued to the level set).
+  Drawn after the quad — `gl_FragDepth` makes it composite correctly.
 
 ## The math
+- [[raymarching-level-sets]] — the full method: pixel → ray (unprojection), bounding
+  sphere clip, fixed-step + bisection root finding, gradient normals, depth write.
 - Level sets: $c$ regular $\Rightarrow$ $f^{-1}(c)$ is a smooth 2-manifold; almost every
   $c$ is regular (Sard). Topology changes when $c$ crosses a critical value.
-- $f - c$ is **not** a signed distance function (no eikonal property), so sphere tracing
-  is unsafe; the shader uses fixed-step sign-change detection + bisection instead
-  (Mitchell 1990 is the robust reference).
-- Surface normal $= \nabla f / |\nabla f|$, taken by central differences in the shader
-  (symbolic $\nabla f$ from [[Expression]] is the planned upgrade).
 - Method survey and citations: `docs/level-set-meshing-proposal.html`.
 
 ## Controls / uniforms
+- Preset combo (tangle cube / torus / rippled sphere / gyroid / klein bottle) — sets
+  $f$, $c$, $a$ and the domain radius; hand-editing $f$ flips it back to "custom".
 - `f(x,y,z) =` text box (Enter or Apply); parse errors show in red, previous shader
   keeps rendering.
-- `c` drag — the level; a uniform, so sweeping it never recompiles.
+- `c` drag — the level; `a (distort)` drag — free parameter available as variable `a`
+  in $f$ and $V$. Both are uniforms, so sweeping them never recompiles.
 - `domain radius` drag — bounding-sphere radius `u_range` the rays search inside.
-- Variables: `x, y, z`, `t` (seconds → `u_time`). Default function: the tangle cube
-  $x^4+y^4+z^4-5(x^2+y^2+z^2)$ at $c=-11.8$ (topology changes at $0, -6.25, -12.5, -18.75$).
+- Variables: `x, y, z`, `t` (seconds → `u_time`), `a` (→ `u_a`). Default preset: the
+  tangle cube $x^4+y^4+z^4-a(x^2+y^2+z^2)$ at $a=5$, $c=-11.8$ (topology changes at
+  $0, -6.25, -12.5, -18.75$).
 - Uniforms set per frame in `render`: `u_viewProj`, `u_invViewProj`, `u_c`, `u_range`,
-  `u_time`.
+  `u_time`, `u_a`.
+- Flow demo: checkbox spawns a [[SolutionCurve]] particle flowing on the surface;
+  the ambient field $V(x,y,z,t)$ is typed as three component expressions (default
+  swirl $(-y,\,x,\,0.4)$), parsed by [[Expression]] and tangent-projected; trail
+  toggle, RK4 step-size drag, reset button.
 - WASD rotate, Q/E zoom (orbit camera).
 
 ## Future

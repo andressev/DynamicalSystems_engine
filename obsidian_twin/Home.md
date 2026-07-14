@@ -52,6 +52,7 @@ core is the skeleton sims don't choose). New modules via the `/new-module` skill
 - [[Shader]] — GLSL program wrapper (file or in-memory sources)
 - [[Mesh]] — RAII VAO/VBO/EBO; the future CUDA interop point
 - [[Shapes]] — procedural geometry generators
+- [[SolutionCurve]] — CPU particle integrating x' = V(x,t) (RK4), sphere body + trail
 
 ### math — pure computation, std-only
 - [[Expression]] — function parser: UI string → AST → CPU eval + GLSL codegen
@@ -68,6 +69,7 @@ Domain concepts as first-class notes (idea / equations / where implemented / pit
 sims link to them instead of re-deriving. New concepts from `math/_template.md`.
 - [[stereographic-projection]] — sphere ↔ complex plane, the Riemann-sphere map
 - [[domain-coloring]] — complex function → hue/brightness
+- [[raymarching-level-sets]] — pixel → ray, sign-change march + bisection on f − c
 
 ## Decisions
 - [[0001-hybrid-scene-interface-plus-standalone-executables]]

@@ -17,6 +17,7 @@ uniform mat4 u_viewProj;    // world -> clip, writes gl_FragDepth at the hit
 uniform float u_c;          // the level:  f(x,y,z) = c
 uniform float u_range;      // bounding-sphere radius of the marched domain
 uniform float u_time;       // seconds since the sim started (variable t)
+uniform float u_a;          // free distortion parameter (variable a)
 
 //__COMPLEX_LIB__
 

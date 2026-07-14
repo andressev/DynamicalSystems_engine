@@ -9,6 +9,7 @@ add_library(engine STATIC
     "src/Expression.cpp"
     "src/Camera.cpp"
     "src/Mesh.cpp"
+    "src/SolutionCurve.cpp"
     "src/SimRegistry.cpp"
     "src/App.cpp"
     "${CMAKE_SOURCE_DIR}/External/Glad/src/glad.c"
