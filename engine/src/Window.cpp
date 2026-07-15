@@ -80,6 +80,11 @@ bool Window::keyDown(int key) const
     return glfwGetKey(window, key) == GLFW_PRESS;
 }
 
+bool Window::mouseDown(int button) const
+{
+    return glfwGetMouseButton(window, button) == GLFW_PRESS;
+}
+
 void Window::framebufferSizeCallback(GLFWwindow* window, int width, int height)
 {
     glViewport(0, 0, width, height);

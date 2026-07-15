@@ -9,6 +9,7 @@
 #include <engine/SolutionCurve.h>
 
 #include <imgui.h>
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <cstdio>
@@ -94,9 +95,34 @@ public:
         time += dt;
         if (particleDemo)
         {
-            particle.update(dt, time);
-            if (followCam)
-                updateFollowCam(dt);
+            handlePlacement();
+            if (particleAlive)
+            {
+                particle.update(dt, time);
+                if (followCam)
+                    updateFollowCam(dt);
+            }
+        }
+    }
+
+    // "place" mode: armed by the UI button, waits for a fresh left click on
+    // the viewport (not on ImGui), casts the cursor ray at the surface and
+    // spawns the particle at the hit. A miss keeps the mode armed.
+    void handlePlacement()
+    {
+        bool down = app->window().mouseDown(0);
+        bool clicked = down && !mouseWasDown;
+        mouseWasDown = down;
+        if (!placing || !clicked || ImGui::GetIO().WantCaptureMouse)
+            return;
+
+        glm::vec2 ndc = app->window().cursorPosNormalized() * 2.0f - glm::vec2(1.0f);
+        glm::vec3 hit;
+        if (raycastSurface(ndc, hit))
+        {
+            particle.reset(hit);
+            particleAlive = true;
+            placing = false;
         }
     }
 
@@ -171,7 +197,7 @@ public:
         quadMesh->draw(GL_TRIANGLES);
 
         // real geometry: composites with the surface through gl_FragDepth
-        if (particleDemo)
+        if (particleDemo && particleAlive)
             particle.draw(view, projection);
     }
 
@@ -190,8 +216,8 @@ public:
                     paramA = kPresets[i].a;
                     range = kPresets[i].range;
                     applyFunction(funcBuf);
-                    if (particleDemo)
-                        resetParticle();
+                    if (particleAlive)
+                        spawnParticle(); // old position may not be on the new surface
                 }
             }
             ImGui::EndCombo();
@@ -221,16 +247,25 @@ public:
         ImGui::Separator();
         if (ImGui::Checkbox("flow demo (particle on the surface)", &particleDemo))
         {
-            if (particleDemo)
-                resetParticle();
-            else if (followCam)
-                setFollowCam(false); // hand the camera back with the demo
+            if (!particleDemo)
+            {
+                particleAlive = false;
+                placing = false;
+                if (followCam)
+                    setFollowCam(false); // hand the camera back with the demo
+            }
         }
         if (particleDemo)
         {
             ImGui::SameLine();
-            if (ImGui::Button("reset##particle"))
-                resetParticle();
+            if (ImGui::Button("spawn##particle")) // at the fixed default point
+                spawnParticle();
+            ImGui::SameLine();
+            if (ImGui::Button(placing ? "cancel##place" : "place##particle"))
+                placing = !placing;
+            if (placing)
+                ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f),
+                                   "click the surface to place the particle");
 
             // the ambient field V, tangent-projected onto the surface
             ImGui::TextUnformatted("V =");
@@ -253,7 +288,13 @@ public:
                 ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", fieldError.c_str());
 
             ImGui::Checkbox("trail", &particle.trailEnabled);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(120.0f);
+            ImGui::DragFloat("trail time (s)", &trailSeconds, 0.1f, 0.1f, 60.0f, "%.1f");
             ImGui::DragFloat("step size", &particle.stepSize, 0.001f, 0.0005f, 0.2f, "%.4f");
+            // trail points are pushed once per RK4 step, so seconds of trail
+            // = trailMax * stepSize; keep trailMax in sync with both sliders
+            particle.trailMax = std::max(2, (int)(trailSeconds / particle.stepSize));
 
             bool follow = followCam;
             if (ImGui::Checkbox("follow cam (ride the particle)", &follow))
@@ -362,9 +403,60 @@ private:
         };
     }
 
-    void resetParticle()
+    void spawnParticle()
     {
         particle.reset(glm::vec3(0.5f * range, 0.3f, 0.5f));
+        particleAlive = true;
+        placing = false;
+    }
+
+    // CPU twin of the shader's march (see math/raymarching-level-sets): clip
+    // the ray to the domain sphere, fixed-step search for a sign change of
+    // F = f - c, bisect the bracket. Used to place the particle by click.
+    bool raycastSurface(const glm::vec2& ndc, glm::vec3& hit) const
+    {
+        glm::mat4 invVP = glm::inverse(app->camera().getProjectionMatrix()
+                                       * app->camera().getViewMatrix());
+        glm::vec4 nearH = invVP * glm::vec4(ndc, -1.0f, 1.0f);
+        glm::vec4 farH = invVP * glm::vec4(ndc, 1.0f, 1.0f);
+        glm::vec3 ro = glm::vec3(nearH) / nearH.w;
+        glm::vec3 rd = glm::normalize(glm::vec3(farH) / farH.w - ro);
+
+        float b = glm::dot(ro, rd);
+        float cc = glm::dot(ro, ro) - range * range;
+        float disc = b * b - cc;
+        if (disc < 0.0f)
+            return false; // ray never enters the domain sphere
+        float t0 = std::max(-b - std::sqrt(disc), 0.0f);
+        float t1 = -b + std::sqrt(disc);
+        if (t1 <= t0)
+            return false;
+
+        const int N = 220;
+        const float dt = (t1 - t0) / N;
+        float tPrev = t0;
+        float fPrev = evalF(ro + tPrev * rd, time);
+        for (int i = 1; i <= N; ++i)
+        {
+            float ti = t0 + i * dt;
+            float fi = evalF(ro + ti * rd, time);
+            if (fPrev * fi <= 0.0f)
+            {
+                for (int k = 0; k < 14; ++k)
+                {
+                    float tm = 0.5f * (tPrev + ti);
+                    float fm = evalF(ro + tm * rd, time);
+                    if (fPrev * fm <= 0.0f)
+                        ti = tm;
+                    else { tPrev = tm; fPrev = fm; }
+                }
+                hit = ro + 0.5f * (tPrev + ti) * rd;
+                return true;
+            }
+            tPrev = ti;
+            fPrev = fi;
+        }
+        return false;
     }
 
     static void replaceOnce(std::string& text, const std::string& placeholder,
@@ -383,6 +475,10 @@ private:
     engine::Expression cpuExpr;      // CPU twin of the shader's f
     engine::SolutionCurve particle;
     bool particleDemo = false;
+    bool particleAlive = false;           // spawn/place happened; update & draw
+    bool placing = false;                 // armed: next viewport click places
+    bool mouseWasDown = false;            // edge detection for that click
+    float trailSeconds = 2.0f;            // trail length in sim-time seconds
     // follow-cam state
     bool followCam = false;
     float followHeight = 0.4f;

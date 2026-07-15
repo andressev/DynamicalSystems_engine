@@ -8,7 +8,9 @@ code:
 
 ## The idea
 Render the level set $f(x,y,z)=c$ with no mesh: every pixel independently casts a ray
-into the world and finds its first crossing of the surface. Since a typed $f$ is **not**
+into the world and finds its first crossing of the surface, we cast the rays from a plane corresponding to the screen view, we have to invert screen view into worlds pace then cast the ray. To keep depth accurate we obtain the world
+
+Since a typed $f$ is **not**
 a signed distance field (no eikonal property $|\nabla f|=1$, its value says nothing
 about distance), sphere tracing is unsafe — we use fixed-step sampling + bisection on
 the sign of $F = f - c$ instead.

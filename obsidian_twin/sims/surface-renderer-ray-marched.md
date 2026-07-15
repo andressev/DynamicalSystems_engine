@@ -70,10 +70,17 @@ the bracketing interval, shades from the central-difference gradient, and writes
   $0, -6.25, -12.5, -18.75$).
 - Uniforms set per frame in `render`: `u_viewProj`, `u_invViewProj`, `u_c`, `u_range`,
   `u_time`, `u_a`.
-- Flow demo: checkbox spawns a [[SolutionCurve]] particle flowing on the surface;
-  the ambient field $V(x,y,z,t)$ is typed as three component expressions (default
-  swirl $(-y,\,x,\,0.4)$), parsed by [[Expression]] and tangent-projected; trail
-  toggle, RK4 step-size drag, reset button.
+- Flow demo: checkbox enables a [[SolutionCurve]] particle flowing on the surface
+  (nothing appears until it is spawned); the ambient field $V(x,y,z,t)$ is typed as
+  three component expressions (default swirl $(-y,\,x,\,0.4)$), parsed by
+  [[Expression]] and tangent-projected. Two ways to start it: **spawn** drops it at a
+  fixed default point; **place** arms click-to-place — the next left click on the
+  viewport (via `Window::mouseDown`, ignored over ImGui) is unprojected into a ray and
+  marched against $F = f - c$ on the CPU (same clip + sign-change + bisection scheme
+  as [[raymarching-level-sets]], over `Expression::eval`), spawning at the hit; a miss
+  keeps place mode armed. Trail toggle plus a "trail time (s)" drag — trail points are
+  one per RK4 step, so `trailMax` is kept at trail-seconds / step-size; RK4 step-size
+  drag.
 - Follow cam: rides the particle — position $p + h\,n - 0.6h\,d$ (normal offset $h$
   adjustable, $d$ = motion direction), looking ahead along $d$, up $= n$, all
   exponentially smoothed. Takes the camera via `Camera::inputEnabled = false`;

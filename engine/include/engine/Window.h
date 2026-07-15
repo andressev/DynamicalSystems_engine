@@ -32,6 +32,10 @@ public:
     // (GLFW key codes match ASCII for letters/digits, e.g. keyDown('W'))
     bool keyDown(int key) const;
 
+    // true while the mouse button is held; 0 = left, 1 = right, 2 = middle
+    // (GLFW button numbering)
+    bool mouseDown(int button = 0) const;
+
     GLFWwindow* handle() const { return window; }
 
 private:

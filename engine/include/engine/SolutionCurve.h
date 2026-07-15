@@ -23,7 +23,7 @@ public:
     using Field = std::function<glm::vec3(const glm::vec3& p, float t)>;
 
     Field field;                          // x' = field(x, t); no-op while unset
-    float stepSize = 0.01f;               // RK4 step h, in simulation-time units
+    float stepSize = 0.001f;               // RK4 step h, in simulation-time units
     bool trailEnabled = true;
     int trailMax = 2000;                  // oldest trail points dropped past this
     float bodyRadius = 0.08f;

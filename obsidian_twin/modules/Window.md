@@ -28,6 +28,9 @@ Sims never construct one; query it via `app.window()`:
   follow-mouse coefficients).
 - `keyDown(int key)` — true while held; takes uppercase ASCII (GLFW letter/digit key
   codes match ASCII). Lets sims poll keys without touching GLFW directly.
+- `mouseDown(int button = 0)` — true while the mouse button is held; GLFW numbering
+  (0 left, 1 right, 2 middle). Sims edge-detect clicks themselves (used by
+  [[surface-renderer-ray-marched]]'s click-to-place particle).
 - `handle()` — raw `GLFWwindow*` for [[Camera]] input and the ImGui backend.
 
 ## Notes

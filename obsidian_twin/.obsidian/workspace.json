@@ -185,6 +185,8 @@
   },
   "active": "1a9335d0d8506997",
   "lastOpenFiles": [
+    "sims/surface-renderer-ray-marched.md.tmp.178640.fa98d61f59d3",
+    "modules/Window.md.tmp.178640.9593016bdeaf",
     "sims/surface-renderer-ray-marched.md.tmp.143968.c316eefe9f6f",
     "sims/surface-renderer-ray-marched.md.tmp.143968.d26285eb1e23",
     "sims/surface-renderer-ray-marched.md.tmp.143968.8623ba89fa59",
@@ -196,8 +198,6 @@
     "modules/SolutionCurve.md",
     "modules/SolutionCurve.md.tmp.143968.6f752217cb7a",
     "sims/surface-renderer-ray-marched.md",
-    "Home.md.tmp.143968.157a26b2d8e5",
-    "sims/surface-renderer-ray-marched.md.tmp.143968.5818f0cad6e8",
     "math/raymarching-level-sets.md",
     "Home.md",
     "conventions.md",
