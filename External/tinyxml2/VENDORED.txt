@@ -1,0 +1,2 @@
+tinyxml2 (https://github.com/leethomason/tinyxml2), zlib license.
+Vendored from commit 8224e427b655b83dae5e2298f1e6919523a78737. Needed by MicroTeX.

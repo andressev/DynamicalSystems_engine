@@ -1,0 +1,4 @@
+MicroTeX (https://github.com/NanoMichael/MicroTeX), MIT.
+Vendored from commit 0e3707f6dafebb121d98b53c64364d16fefe481d (2024-08-06).
+Kept: src/ (minus samples, qt/skia/cairo backends), res/, LICENSE, README.md.
+Built by cmake/microtex.cmake. Do not modify; re-vendor to update.

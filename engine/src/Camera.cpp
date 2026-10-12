@@ -10,12 +10,10 @@ void Camera::processInput(GLFWwindow* window, float dt)
     if (!inputEnabled)
         return;
 
-    float cameraSpeed = speed * dt;
-
     if (mode == Mode::Orbit)
-        orbitMode(window, cameraSpeed);
+        orbitMode(window, dt);
     if (mode == Mode::Free)
-        freeMode(window, cameraSpeed);
+        freeMode(window, speed * dt);
 }
 
 void Camera::freeMode(GLFWwindow* window, float cameraSpeed)
@@ -32,26 +30,34 @@ void Camera::freeMode(GLFWwindow* window, float cameraSpeed)
     //TODO free rotation
 }
 
-void Camera::orbitMode(GLFWwindow* window, float cameraSpeed)
+void Camera::orbitMode(GLFWwindow* window, float dt)
 {
+    // rotation is in radians, zoom in world units — two rates, one damping factor
+    float turn = orbitAngularSpeed * dt;
+    float zoom = speed * dt;
+
     // proximity damping: movement scales with how close the radius is to its
     // minimum, so approach is smooth and the camera slows for close inspection
     // (floor of 10% keeps it possible to rotate and back away at the surface)
     if (orbitSlowZone > 0.0f)
-        cameraSpeed *= glm::clamp((orbitRadius - orbitRadiusMin) / orbitSlowZone, 0.1f, 1.0f);
+    {
+        float damp = glm::clamp((orbitRadius - orbitRadiusMin) / orbitSlowZone, 0.1f, 1.0f);
+        turn *= damp;
+        zoom *= damp;
+    }
 
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        orbitTheta -= cameraSpeed;
+        orbitTheta -= turn;
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        orbitTheta += cameraSpeed;
+        orbitTheta += turn;
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        orbitPhi -= cameraSpeed;
+        orbitPhi -= turn;
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        orbitPhi += cameraSpeed;
+        orbitPhi += turn;
     if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
-        orbitRadius += cameraSpeed;
+        orbitRadius += zoom;
     if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
-        orbitRadius -= cameraSpeed;
+        orbitRadius -= zoom;
     orbitRadius = glm::max(orbitRadius, orbitRadiusMin);
 
     // clamp phi away from poles to avoid lookAt singularity

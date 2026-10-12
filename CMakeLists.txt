@@ -13,6 +13,9 @@ project ("MathExplorer")
 
 option(BUILD_STANDALONE_SIMS "Build a standalone executable for each sim" ON)
 
+# Vendored libraries that need a build target of our own.
+include(cmake/microtex.cmake)
+
 # Engine + sims + apps.
 add_subdirectory ("engine")
 add_subdirectory ("sims")

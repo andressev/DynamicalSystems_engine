@@ -41,16 +41,27 @@ Reference implementation: `applyFunction()` in `sims/riemann_sphere/RiemannSpher
    move-assign — see [[Shader]]).
 5. **Feed the uniforms each frame** in `render()` (`setFloat("u_time", ...)` etc.).
    Structure changes at Apply-time (recompile); values change per frame (uniforms).
-6. For CPU-side use of the same input, call `eval(values)` with the values in the same
-   order as the parse-time variable list.
+6. For CPU-side use of the same input, call `eval(values)` (complex) or `evalReal(values)`
+   (real) with the values in the same order as the parse-time variable list.
+
+**Steps 1, 3-5 are the shader path only.** For pure CPU math — an [[Integrator]] right-hand
+side, a sampler — there is no codegen step at all: parse, then call `evalReal` per sample.
+[[VectorField]] is that path packaged; [[0006-cpu-field-sampling-dynamic-glyph-mesh]] says
+why the vector-field track evaluates on the CPU instead of generating a shader.
 
 Interface:
 - `Expression::parse(source, variables, error)` — variables are caller-defined names
   (e.g. `{"z","t","m"}`), so each sim picks its own. Invalid result + position-annotated
   `error` on failure; never throws.
 - `eval(values)` — `std::complex<double>`, values matching the parse-time variable list.
-  Complex-only for now; M3 adds a fast pure-real eval for real ODE functions
-  (up to ~3 variables).
+- `evalReal(values)` — the same AST walked with `double`s, for real right-hand sides an
+  [[Integrator]] hits thousands of times a frame ([[VectorField]] is the user). Constants
+  keep only their real part, so `i` reads as $0$, and the complex-only functions collapse
+  to their real meaning (`conj`/`re` identity, `im` $= 0$, `arg` $\in \{0, \pi\}$) —
+  a real field typed with `i` in it is a user error the parser cannot catch.
+- `usesVariable(index)` — does `variables[index]` actually appear? Lets a sim skip work
+  that only a typed variable would justify (the per-frame glyph rebuild in
+  [[vector-field]] happens only when the field really mentions $t$).
 - `glsl(glslVars)` — emits a `vec2` expression; `glslVars[i]` is the GLSL expression
   standing in for `variables[i]` (e.g. `{"z", "vec2(u_time, 0.0)", "u_mouse"}`). This
   mapping is how one parser serves many sims/uniform layouts.
@@ -71,4 +82,8 @@ multiplication (`cPowi` in GLSL, a loop on CPU) instead of exp/log-based `pow`, 
 ## Notes
 - No test target in the build; `parse/eval/glsl` were verified with a standalone
   harness compiling `Expression.cpp` alone (it has zero deps) — worth turning into a
-  real test target when a test setup exists.
+  real test target when a test setup exists. `evalReal`/`usesVariable` were verified the
+  same way (agreement with `eval` on the real line, `x^2` finite at 0, `t` detection).
+- The real and complex walkers share the AST, the integer-power rule and the function
+  table (one row per function carries both evaluators plus the GLSL pattern) — adding a
+  function means filling all three, or the two paths drift apart.

@@ -26,7 +26,7 @@ cmake --build out/build/x64-debug
 | `sims/<name>/` | One sim per folder: `Sim` subclass, factory, own `shaders/`, own CMakeLists calling `add_sim()` |
 | `apps/explorer/` | Multi-sim executable; registers every sim |
 | `apps/standalone/` | Generic single-sim `main.cpp`, compiled once per sim by `add_sim()` |
-| `External/` | Vendored deps (glfw, glad, glm, stb_image, imgui) — never modify |
+| `External/` | Vendored deps (glfw, glad, glm, stb_image, imgui, microtex + tinyxml2 — built by `cmake/microtex.cmake`, linked privately into engine for `LatexImage`) — never modify |
 | `obsidian_twin/` | Obsidian-style vault mirroring the architecture (see rule below) |
 | `learnOpenGL/`, `custom/`, `explanations/` | Frozen reference playground — **never modify** |
 

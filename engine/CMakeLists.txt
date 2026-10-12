@@ -7,8 +7,12 @@ add_library(engine STATIC
     "src/Window.cpp"
     "src/Shader.cpp"
     "src/Expression.cpp"
+    "src/VectorField.cpp"
+    "src/Integrator.cpp"
     "src/Camera.cpp"
     "src/Mesh.cpp"
+    "src/Trajectory.cpp"
+    "src/LatexImage.cpp"
     "src/SimRegistry.cpp"
     "src/App.cpp"
     "${CMAKE_SOURCE_DIR}/External/Glad/src/glad.c"
@@ -37,3 +41,7 @@ target_link_libraries(engine PUBLIC
     "${CMAKE_SOURCE_DIR}/External/glfw/lib-vc2022/glfw3.lib"
     opengl32
 )
+
+# LaTeX layout for LatexImage (cmake/microtex.cmake); private: only LatexImage.cpp
+# includes MicroTeX headers.
+target_link_libraries(engine PRIVATE microtex)

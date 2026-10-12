@@ -33,6 +33,17 @@ public:
     // values[i] is the value of variables[i] passed to parse().
     std::complex<double> eval(const std::vector<std::complex<double>>& values) const;
 
+    // Real-line evaluation of the same AST — for real ODE right-hand sides, which
+    // an integrator hits thousands of times per frame. Constants keep only their
+    // real part (so `i` reads as 0) and the complex-only functions collapse to
+    // their real meaning (conj/re = identity, im = 0, arg = 0 or pi).
+    double evalReal(const std::vector<double>& values) const;
+
+    // True if variables[index] actually appears in the expression — lets a sim skip
+    // work that only matters for a variable the user didn't type (e.g. rebuilding a
+    // glyph grid every frame only when the field really depends on time).
+    bool usesVariable(int index) const;
+
     // Emit a GLSL vec2 expression; glslVars[i] is the GLSL expression standing in
     // for variables[i] (e.g. {"z", "u_time", "u_mouse"}). The generated code calls
     // the helpers from glslComplexLib(), which must be present in the shader.

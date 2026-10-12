@@ -25,30 +25,35 @@ struct ParseError {
 
 // ---- function + constant tables ------------------------------------------
 
-// One row per callable function: CPU evaluation and the GLSL emit pattern,
-// where "$" stands for the already-generated argument expression.
+// One row per callable function: CPU evaluation (complex and real), and the GLSL
+// emit pattern, where "$" stands for the already-generated argument expression.
+// `evalR` is the real-line restriction used by evalReal(); the complex-only names
+// collapse to their real meaning there (conj/re = identity, im = 0, arg = 0 or pi).
 struct FuncDef {
     const char* name;
     cd (*eval)(const cd&);
+    double (*evalR)(double);
     const char* glslPattern;
 };
 
+const double kPi = 3.14159265358979323846;
+
 const FuncDef kFuncs[] = {
-    {"sin",  [](const cd& z) { return std::sin(z); },            "cSin($)"},
-    {"cos",  [](const cd& z) { return std::cos(z); },            "cCos($)"},
-    {"tan",  [](const cd& z) { return std::tan(z); },            "cTan($)"},
-    {"sinh", [](const cd& z) { return std::sinh(z); },           "cSinh($)"},
-    {"cosh", [](const cd& z) { return std::cosh(z); },           "cCosh($)"},
-    {"tanh", [](const cd& z) { return std::tanh(z); },           "cTanh($)"},
-    {"exp",  [](const cd& z) { return std::exp(z); },            "cExp($)"},
-    {"log",  [](const cd& z) { return std::log(z); },            "cLog($)"},
-    {"ln",   [](const cd& z) { return std::log(z); },            "cLog($)"},
-    {"sqrt", [](const cd& z) { return std::sqrt(z); },           "cSqrt($)"},
-    {"conj", [](const cd& z) { return std::conj(z); },           "cConj($)"},
-    {"abs",  [](const cd& z) { return cd(std::abs(z), 0.0); },   "vec2(cMod($), 0.0)"},
-    {"arg",  [](const cd& z) { return cd(std::arg(z), 0.0); },   "vec2(cArg($), 0.0)"},
-    {"re",   [](const cd& z) { return cd(z.real(), 0.0); },      "vec2(($).x, 0.0)"},
-    {"im",   [](const cd& z) { return cd(z.imag(), 0.0); },      "vec2(($).y, 0.0)"},
+    {"sin",  [](const cd& z) { return std::sin(z); },  [](double x) { return std::sin(x); },  "cSin($)"},
+    {"cos",  [](const cd& z) { return std::cos(z); },  [](double x) { return std::cos(x); },  "cCos($)"},
+    {"tan",  [](const cd& z) { return std::tan(z); },  [](double x) { return std::tan(x); },  "cTan($)"},
+    {"sinh", [](const cd& z) { return std::sinh(z); }, [](double x) { return std::sinh(x); }, "cSinh($)"},
+    {"cosh", [](const cd& z) { return std::cosh(z); }, [](double x) { return std::cosh(x); }, "cCosh($)"},
+    {"tanh", [](const cd& z) { return std::tanh(z); }, [](double x) { return std::tanh(x); }, "cTanh($)"},
+    {"exp",  [](const cd& z) { return std::exp(z); },  [](double x) { return std::exp(x); },  "cExp($)"},
+    {"log",  [](const cd& z) { return std::log(z); },  [](double x) { return std::log(x); },  "cLog($)"},
+    {"ln",   [](const cd& z) { return std::log(z); },  [](double x) { return std::log(x); },  "cLog($)"},
+    {"sqrt", [](const cd& z) { return std::sqrt(z); }, [](double x) { return std::sqrt(x); }, "cSqrt($)"},
+    {"conj", [](const cd& z) { return std::conj(z); }, [](double x) { return x; },            "cConj($)"},
+    {"abs",  [](const cd& z) { return cd(std::abs(z), 0.0); }, [](double x) { return std::abs(x); },       "vec2(cMod($), 0.0)"},
+    {"arg",  [](const cd& z) { return cd(std::arg(z), 0.0); }, [](double x) { return x < 0.0 ? kPi : 0.0; }, "vec2(cArg($), 0.0)"},
+    {"re",   [](const cd& z) { return cd(z.real(), 0.0); },    [](double x) { return x; },                 "vec2(($).x, 0.0)"},
+    {"im",   [](const cd& z) { return cd(z.imag(), 0.0); },    [](double)   { return 0.0; },               "vec2(($).y, 0.0)"},
 };
 
 const FuncDef* findFunc(const std::string& name)
@@ -356,6 +361,57 @@ cd evalNode(const Node& node, const std::vector<cd>& values)
     return {};
 }
 
+double powIntReal(double base, long n)
+{
+    double r = 1.0;
+    for (long k = 0; k < std::labs(n); ++k)
+        r *= base;
+    return n < 0 ? 1.0 / r : r;
+}
+
+// Real-line twin of evalNode: same AST, doubles instead of std::complex. Real ODE
+// right-hand sides get evaluated thousands of times per frame by an Integrator, so
+// this path skips the complex arithmetic entirely. Constants keep only their real
+// part, so `i` reads as 0 here.
+double evalRealNode(const Node& node, const std::vector<double>& values)
+{
+    switch (node.kind)
+    {
+    case Node::Kind::Constant: return node.value.real();
+    case Node::Kind::Variable: return values.at(node.index);
+    case Node::Kind::Unary:    return -evalRealNode(*node.a, values);
+    case Node::Kind::Call:     return kFuncs[node.index].evalR(evalRealNode(*node.a, values));
+    case Node::Kind::Binary:
+    {
+        double lhs = evalRealNode(*node.a, values);
+        switch (node.op)
+        {
+        case '+': return lhs + evalRealNode(*node.b, values);
+        case '-': return lhs - evalRealNode(*node.b, values);
+        case '*': return lhs * evalRealNode(*node.b, values);
+        case '/': return lhs / evalRealNode(*node.b, values);
+        case '^':
+        {
+            long n;
+            if (integerExponent(*node.b, n))
+                return powIntReal(lhs, n);
+            return std::pow(lhs, evalRealNode(*node.b, values));
+        }
+        }
+    }
+    }
+    return 0.0;
+}
+
+bool usesVariableNode(const Node& node, int index)
+{
+    if (node.kind == Node::Kind::Variable)
+        return node.index == index;
+    if (node.a && usesVariableNode(*node.a, index))
+        return true;
+    return node.b && usesVariableNode(*node.b, index);
+}
+
 // ---- GLSL codegen -----------------------------------------------------------
 
 std::string glslFloat(double v)
@@ -447,6 +503,16 @@ Expression Expression::parse(const std::string& source,
 std::complex<double> Expression::eval(const std::vector<std::complex<double>>& values) const
 {
     return root ? evalNode(*root, values) : cd{};
+}
+
+double Expression::evalReal(const std::vector<double>& values) const
+{
+    return root ? evalRealNode(*root, values) : 0.0;
+}
+
+bool Expression::usesVariable(int index) const
+{
+    return root && usesVariableNode(*root, index);
 }
 
 std::string Expression::glsl(const std::vector<std::string>& glslVars) const

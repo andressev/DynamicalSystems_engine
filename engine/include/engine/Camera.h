@@ -20,7 +20,13 @@ public:
     glm::vec3 front{0.0f, 0.0f, -1.0f};
     glm::vec3 up{0.0f, 1.0f, 0.0f};
     glm::vec3 orbitCenter{0.0f, 0.0f, 0.0f};
+    // Translation rate: world units per second (free-mode movement, orbit zoom).
+    // A sim whose scene is huge scales this up so crossing it doesn't take a minute.
     float speed = 1.5f;
+    // Orbit rotation rate: RADIANS per second, deliberately separate from `speed`.
+    // They are different units, and tying them together makes a large scene spin
+    // absurdly fast the moment its zoom rate is raised.
+    float orbitAngularSpeed = 1.5f;
 
     // Orbit constraints, tunable per sim in init(): the camera never gets closer
     // to orbitCenter than orbitRadiusMin, and when orbitSlowZone > 0 all orbit
@@ -30,6 +36,12 @@ public:
     float orbitSlowZone = 0.0f;
     // Current orbit distance; sims may set it in init() to frame their scene.
     float orbitRadius = 3.0f;
+    // Orbit angles (radians): theta around +Y from +Z, phi down from +Y (clamped away
+    // from the poles each frame). Together with orbitRadius and orbitCenter they ARE the
+    // orbit view — save these four to restore a camera, not position/front, which
+    // orbit mode recomputes from them every frame.
+    float orbitTheta = 0.0f;
+    float orbitPhi = glm::half_pi<float>();
 
     // projection parameters; App updates aspect from the window each frame
     float fovDeg = 55.0f;
@@ -44,10 +56,7 @@ public:
 
 private:
     void freeMode(GLFWwindow* window, float cameraSpeed);
-    void orbitMode(GLFWwindow* window, float cameraSpeed);
-
-    float orbitTheta = 0.0f;
-    float orbitPhi = glm::half_pi<float>();
+    void orbitMode(GLFWwindow* window, float dt);
 };
 
 } // namespace engine

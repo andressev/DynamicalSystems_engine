@@ -11,15 +11,16 @@ and which modules it attaches. `tools/check_twin.py` verifies code ↔ vault sta
 
 ## Routing — if you're doing X, read Y first
 
-| Task | Read first |
-|---|---|
-| Anything (session start) | the `## Now` section of [[roadmap]] |
-| New sim | [[conventions]], [[Sim]], then "How to use it" of each module you'll attach |
-| New module | [[0004-modules-vs-simulations]], `modules/_template` |
-| Touching the render path | [[render-pipeline]], [[Shader]], [[Mesh]] |
-| Touching parsing / GLSL codegen | [[Expression]], [[0003-hand-rolled-parser-glsl-codegen]] |
-| Sim switching / lifecycle | [[sim-lifecycle]], [[App]], [[SimRegistry]] |
-| Anything mathy | the relevant note under `math/` (below) |
+| Task                            | Read first                                                                  |
+| ------------------------------- | --------------------------------------------------------------------------- |
+| Anything (session start)        | the `## Now` section of [[roadmap]]                                         |
+| New sim                         | [[conventions]], [[Sim]], then "How to use it" of each module you'll attach |
+| New module                      | [[0004-modules-vs-simulations]], `modules/_template`                        |
+| Touching the render path        | [[render-pipeline]], [[Shader]], [[Mesh]]                                   |
+| Touching parsing / GLSL codegen | [[Expression]], [[0003-hand-rolled-parser-glsl-codegen]]                    |
+| Sim switching / lifecycle       | [[sim-lifecycle]], [[App]], [[SimRegistry]]                                 |
+| ODEs / flows / trajectories     | [[integral-curves]], [[VectorField]], [[Integrator]], [[Trajectory]]        |
+| Anything mathy                  | the relevant note under `math/` (below)                                     |
 
 Notes carry the *why*, *where*, and *now* that code can't
 ([[0005-vault-as-ai-navigation]]); read the code itself for the *what*. Every
@@ -50,11 +51,15 @@ core is the skeleton sims don't choose). New modules via the `/new-module` skill
 ### gfx — GL-facing resources
 - [[Camera]] — orbit/free camera, view + projection matrices
 - [[Shader]] — GLSL program wrapper (file or in-memory sources)
-- [[Mesh]] — RAII VAO/VBO/EBO; the future CUDA interop point
+- [[Mesh]] — RAII VAO/VBO/EBO, static or dynamic; the future CUDA interop point
 - [[Shapes]] — procedural geometry generators
+- [[Trajectory]] — one integral curve: ODE state + growing polyline on the GPU
+- [[LatexImage]] — LaTeX math typeset (MicroTeX) into a texture, drawn via ImGui
 
 ### math — pure computation, std-only
-- [[Expression]] — function parser: UI string → AST → CPU eval + GLSL codegen
+- [[Expression]] — function parser: UI string → AST → CPU eval (complex + real) + GLSL codegen
+- [[VectorField]] — typed strings → a real field on R2/R3; the ODE right-hand side
+- [[Integrator]] — fixed-step Euler/RK2/RK4 over any right-hand side
 
 ### compute — CUDA interop (future, M4 in [[roadmap]])
 - (none yet)
@@ -62,12 +67,18 @@ core is the skeleton sims don't choose). New modules via the `/new-module` skill
 ## Sims
 - [[riemann-sphere]] — domain coloring of complex polynomials on the Riemann sphere
 - [[surface-renderer-ray-marched]] — raymarched implicit surfaces f(x,y,z) = c, live c sweep
+- [[lorenz-manifold]] — geodesic rings of the Lorenz stable manifold, built from a Taylor-series patch
+- [[vector-field]] — typed vector fields on R2/R3: arrow glyphs + trajectories integrated live
+- [[diagonal-linear]] — $\dot x = \mathrm{diag}(\lambda)\,x$ in R3: stable/unstable subspaces + balls of trajectories
 
 ## Math
 Domain concepts as first-class notes (idea / equations / where implemented / pitfalls);
 sims link to them instead of re-deriving. New concepts from `math/_template.md`.
 - [[stereographic-projection]] — sphere ↔ complex plane, the Riemann-sphere map
 - [[domain-coloring]] — complex function → hue/brightness
+- [[lorenz-stable-manifold]] — parametrization method: Taylor patch for a stable manifold
+- [[integral-curves]] — vector fields, flows, equilibria, and glyph conventions
+- [[runge-kutta]] — Euler/RK2/RK4: order, stability, and how they fail
 
 ## Decisions
 - [[0001-hybrid-scene-interface-plus-standalone-executables]]
@@ -75,3 +86,5 @@ sims link to them instead of re-deriving. New concepts from `math/_template.md`.
 - [[0003-hand-rolled-parser-glsl-codegen]]
 - [[0004-modules-vs-simulations]]
 - [[0005-vault-as-ai-navigation]]
+- [[0006-cpu-field-sampling-dynamic-glyph-mesh]]
+- [[0007-latex-labels-microtex-imgui]]

@@ -29,3 +29,6 @@ endfunction()
 
 add_subdirectory("riemann_sphere")
 add_subdirectory("surface_renderer_ray_marched")
+add_subdirectory("lorenz_manifold")
+add_subdirectory("vector_field")
+add_subdirectory("diagonal_linear")

@@ -1,6 +1,9 @@
 #include <engine/App.h>
 #include "RiemannSphereSim.h"
 #include "SurfaceRendererRayMarchedSim.h"
+#include "LorenzManifoldSim.h"
+#include "VectorFieldSim.h"
+#include "DiagonalLinearSim.h"
 
 #include <iostream>
 
@@ -15,6 +18,12 @@ int main()
                        THUMBS_DIR "surface_renderer_ray_marched.png");
         app.sims().add("riemann_sphere", &makeRiemannSphereSim,
                        THUMBS_DIR "riemann_sphere.png");
+        app.sims().add("lorenz_manifold", &makeLorenzManifoldSim,
+                       THUMBS_DIR "lorenz_manifold.png");
+        app.sims().add("vector_field", &makeVectorFieldSim,
+                       THUMBS_DIR "vector_field.png");
+        app.sims().add("diagonal_linear", &makeDiagonalLinearSim,
+                       THUMBS_DIR "diagonal_linear.png");
 
         return app.run();
     }

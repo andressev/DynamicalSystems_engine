@@ -32,3 +32,6 @@ Sims never construct one; query it via `app.window()`:
 
 ## Notes
 - Throws `std::runtime_error` if GLFW/glad initialization fails.
+- The context has vsync on and a 4x MSAA default framebuffer. Both exist for slow
+  motion: without MSAA, points and lines that move less than a pixel per frame jump
+  one whole pixel at a time, and without vsync the frame pacing is uneven.

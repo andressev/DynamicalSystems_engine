@@ -14,6 +14,9 @@ Window::Window(const char* title, int width, int height)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    // 4x MSAA: without it points and thin lines snap to whole pixels, so anything
+    // moving less than a pixel per frame crawls in visible one-pixel jumps
+    glfwWindowHint(GLFW_SAMPLES, 4);
 
     window = glfwCreateWindow(width, height, title, nullptr, nullptr);
     if (window == nullptr)
@@ -22,6 +25,7 @@ Window::Window(const char* title, int width, int height)
         throw std::runtime_error("Failed to create GLFW window");
     }
     glfwMakeContextCurrent(window);
+    glfwSwapInterval(1); // vsync: even frame pacing, no tearing on moving geometry
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
@@ -29,6 +33,8 @@ Window::Window(const char* title, int width, int height)
         glfwTerminate();
         throw std::runtime_error("Failed to initialize GLAD");
     }
+
+    glEnable(GL_MULTISAMPLE);
 
     glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
     glViewport(0, 0, fbWidth, fbHeight);

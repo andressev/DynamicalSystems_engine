@@ -77,6 +77,7 @@ public:
 
         // fullscreen pass; hits write gl_FragDepth, misses discard, so the
         // axis lines drawn above intersect the surface correctly
+        //We need a quad to do the raymaraching on
         raymarchShader.use();
         raymarchShader.setMat4("u_viewProj", viewProj);
         raymarchShader.setMat4("u_invViewProj", glm::inverse(viewProj));
