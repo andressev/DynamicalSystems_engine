@@ -67,6 +67,12 @@ Interface:
   mapping is how one parser serves many sims/uniform layouts.
 - `glslComplexLib()` — canonical `cMul/cDiv/cExp/.../cPowi` helper source; sims splice
   it into their fragment template, then compile via `Shader::fromSources` ([[Shader]]).
+- `latex(texVars)` — the AST typeset as LaTeX math for [[LatexImage]] (`texVars[i]`
+  stands for `variables[i]`): `/` → `\frac`, `^` → superscript, products juxtapose
+  (`2x`, `x\,y`, `\cdot` before a number), calls → `\sin(…)`, `e^{…}`, `\sqrt{…}`,
+  `\left|…\right|`; constants equal to $\pi$, $\tau$, $e$ print as symbols; signs are
+  `{-}` so a leading minus hugs its operand; parentheses only where precedence needs
+  them (`\left(…\right)` only around fractions). [[vector-field]]'s overlay uses it.
 
 ## Language
 `+ - * / ^` (right-assoc `^`), unary minus, parens, implicit multiplication
@@ -83,7 +89,8 @@ multiplication (`cPowi` in GLSL, a loop on CPU) instead of exp/log-based `pow`, 
 - No test target in the build; `parse/eval/glsl` were verified with a standalone
   harness compiling `Expression.cpp` alone (it has zero deps) — worth turning into a
   real test target when a test setup exists. `evalReal`/`usesVariable` were verified the
-  same way (agreement with `eval` on the real line, `x^2` finite at 0, `t` detection).
+  same way (agreement with `eval` on the real line, `x^2` finite at 0, `t` detection),
+  and `latex` against a table of ~30 inputs covering every operator and precedence case.
 - The real and complex walkers share the AST, the integer-power rule and the function
   table (one row per function carries both evaluators plus the GLSL pattern) — adding a
   function means filling all three, or the two paths drift apart.

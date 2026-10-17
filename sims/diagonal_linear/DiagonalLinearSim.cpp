@@ -1,7 +1,10 @@
 #include "DiagonalLinearSim.h"
 
 #include <engine/App.h>
+#include <engine/ArrowGlyphs.h>
 #include <engine/Camera.h>
+#include <engine/FlowKeys.h>
+#include <engine/TrajectoryRunner.h>
 #include <engine/Integrator.h>
 #include <engine/LatexImage.h>
 #include <engine/Mesh.h>
@@ -46,6 +49,8 @@ const glm::vec3 kBallColor(1.0f);
 const glm::vec3 kSingleColor = {0.35f, 0.95f, 0.45f};
 // seeds spawned on a circle in E^s: a lighter stable blue, so they read as "on E^s"
 const glm::vec3 kManifoldColor = {0.60f, 0.72f, 1.0f};
+// x' = Ax at a single's head
+const glm::vec3 kTangentColor = {1.0f, 0.22f, 0.18f};
 
 // UI section title: a red labelled separator with breathing room above, so the long
 // panel reads as distinct blocks.
@@ -73,114 +78,6 @@ std::string texNumber(float v)
 }
 
 const char* kSettingsPath = SIMS_DIR "diagonal_linear/settings.txt";
-
-// ---- arrow glyphs (same construction as vector_field, R3 only) ----------------
-
-constexpr int kFloatsPerShaftVertex = 5;   // pos(3) + magnitude + fade
-constexpr int kFloatsPerHeadVertex = 6;    // + baked facet shade
-constexpr int kMaxConeSegments = 7;
-
-struct HeadLod {
-    int segments;
-    bool cap;
-};
-
-HeadLod headLod(int arrows)
-{
-    if (arrows <= 20000) return {7, true};
-    if (arrows <= 50000) return {5, true};
-    if (arrows <= 90000) return {4, false};
-    return {3, false};
-}
-
-const glm::vec3 kLightDir = glm::normalize(glm::vec3(0.35f, 0.75f, 0.55f));
-const float kAmbient = 0.55f;
-
-int shaftVerticesPerArrow(bool barbs) { return barbs ? 10 : 2; }
-
-void pushVertex(std::vector<float>& out, const glm::vec3& p, float mag, float fade)
-{
-    out.insert(out.end(), {p.x, p.y, p.z, mag, fade});
-}
-
-void pushHeadVertex(std::vector<float>& out, const glm::vec3& p, float mag, float shade)
-{
-    out.insert(out.end(), {p.x, p.y, p.z, mag, 1.0f, shade});
-}
-
-float facetShade(const glm::vec3& normal)
-{
-    return kAmbient + (1.0f - kAmbient) * std::max(0.0f, glm::dot(normal, kLightDir));
-}
-
-void perpBasis(const glm::vec3& dir, glm::vec3& a, glm::vec3& b)
-{
-    glm::vec3 helper = std::abs(dir.z) < 0.9f ? glm::vec3(0.0f, 0.0f, 1.0f)
-                                              : glm::vec3(1.0f, 0.0f, 0.0f);
-    a = glm::normalize(glm::cross(dir, helper));
-    b = glm::cross(dir, a);
-}
-
-void pushArrow(std::vector<float>& shafts, std::vector<float>& heads, const glm::vec3& p,
-               const glm::vec3& dir, float len, float mag, bool barbs, float headFraction,
-               float headWidthRatio, HeadLod lod)
-{
-    glm::vec3 tip = p + dir * len;
-    glm::vec3 a, b;
-    perpBasis(dir, a, b);
-
-    if (barbs)
-    {
-        pushVertex(shafts, p, mag, 0.0f);
-        pushVertex(shafts, tip, mag, 1.0f);
-        glm::vec3 back = tip - dir * (len * 0.32f);
-        float wide = len * 0.16f;
-        for (const glm::vec3& side : {a, -a, b, -b})
-        {
-            pushVertex(shafts, tip, mag, 1.0f);
-            pushVertex(shafts, back + side * wide, mag, 0.9f);
-        }
-        return;
-    }
-
-    // solid cone head; the shaft stops at its base so it never pokes through
-    float headLen = len * headFraction;
-    float headRad = headLen * headWidthRatio;
-    glm::vec3 base = tip - dir * headLen;
-
-    pushVertex(shafts, p, mag, 0.0f);
-    pushVertex(shafts, base, mag, 1.0f);
-
-    glm::vec3 rim[kMaxConeSegments];
-    for (int i = 0; i < lod.segments; ++i)
-    {
-        float th = 6.28318530718f * (float)i / (float)lod.segments;
-        rim[i] = base + (a * std::cos(th) + b * std::sin(th)) * headRad;
-    }
-
-    float hyp = std::sqrt(headRad * headRad + headLen * headLen);
-    float slant = headRad / hyp;
-    float axial = headLen / hyp;
-    float capShade = facetShade(-dir);
-
-    for (int i = 0; i < lod.segments; ++i)
-    {
-        int nxt = (i + 1) % lod.segments;
-        glm::vec3 mid = glm::normalize((rim[i] + rim[nxt]) * 0.5f - base);
-        float shade = facetShade(glm::normalize(mid * axial + dir * slant));
-
-        pushHeadVertex(heads, tip, mag, shade);
-        pushHeadVertex(heads, rim[i], mag, shade);
-        pushHeadVertex(heads, rim[nxt], mag, shade);
-
-        if (lod.cap)
-        {
-            pushHeadVertex(heads, base, mag, capShade);
-            pushHeadVertex(heads, rim[nxt], mag, capShade);
-            pushHeadVertex(heads, rim[i], mag, capShade);
-        }
-    }
-}
 
 // The diagonal linear system x' = diag(l1, l2, l3) x on R3: arrow glyphs, the stable
 // (blue) and unstable (red) eigenspaces, and balls of trajectories dropped into the
@@ -225,23 +122,37 @@ public:
     void update(float dt) override
     {
         handleSeedClick();
+        // Space toggles play/pause, unless ImGui has the keyboard (typing a field)
+        if (!ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_Space, false))
+            playing = !playing;
+        // arrows: Up/Down speed (down to 0), Left reverse, Right forward
+        engine::FlowKeys::handle(timeScale, reverse, dt, 5.0f);
+        engine::FlowKeys::drawStatus(timeScale, reverse, playing);
 
+        integrator.method = (engine::Integrator::Method)method;
+        integrator.maxStep = maxStep;
         if (playing)
         {
             double h = (double)dt * timeScale * (reverse ? -1.0 : 1.0);
+            std::vector<engine::Trajectory*> trajs;
+            trajs.reserve(curves.size());
             for (Curve& c : curves)
-                c.traj->advance(integrator, rhs, h);
+                trajs.push_back(c.traj.get());
+            runner.advance(trajs, integrator, rhs, h);   // integrate (parallel) + upload
         }
 
         app->camera().speed = std::max(1.0f, domainR);
+        followCamera();
 
         if (subspacesDirty)
             rebuildSubspaces();
         if (arrowsDirty)
             rebuildArrows();
+        rebuildTangents();   // after the camera moved: sized by its distance
 
         drawSystemOverlay();
         drawTimeLabels();
+        drawTangentLabels();
         drawSubspaceLabels();
     }
 
@@ -279,22 +190,22 @@ public:
                 shader.setVec3("u_color", s.color);
                 subspaceMesh->drawArrays(GL_LINES, s.lineCount, s.lineFirst);
             }
-            if (showSubspaceArrows && subspaceHeadMesh)
+            if (showSubspaceArrows)
             {
                 shader.setInt("u_shadeMode", 1);
                 for (const SubspaceDraw& s : subspaceDraws)
                 {
-                    if (s.headCount == 0)
+                    if (subspaceCones[s.kind].empty())
                         continue;
                     shader.setVec3("u_color", s.color);
-                    subspaceHeadMesh->drawArrays(GL_TRIANGLES, s.headCount, s.headFirst);
+                    subspaceCones[s.kind].drawHeads(shader);
                 }
                 shader.setInt("u_shadeMode", 0);
             }
             glDepthFunc(GL_LESS);
         }
 
-        if (showArrows && arrowVertexCount > 0)
+        if (showArrows && !glyphs.empty())
         {
             // glyphs blend but never write depth, so they cannot hide a trajectory
             glDepthMask(GL_FALSE);
@@ -303,15 +214,11 @@ public:
             shader.setFloat("u_alpha", arrowAlpha);
             shader.setFloat("u_alphaTail", arrowTailAlpha);
             glLineWidth(1.5f);
-            arrowMesh->drawArrays(GL_LINES, arrowVertexCount);
-
-            if (headVertexCount > 0)
-            {
-                shader.setInt("u_useFade", 0);
-                shader.setInt("u_shadeMode", 1);
-                headMesh->drawArrays(GL_TRIANGLES, headVertexCount);
-                shader.setInt("u_shadeMode", 0);
-            }
+            glyphs.drawShafts(shader);
+            shader.setInt("u_useFade", 0);
+            shader.setInt("u_shadeMode", 1);
+            glyphs.drawHeads(shader);
+            shader.setInt("u_shadeMode", 0);
 
             shader.setInt("u_useRamp", 0);
             shader.setInt("u_useFade", 0);
@@ -320,6 +227,7 @@ public:
             glDepthMask(GL_TRUE);
         }
 
+        runner.beginDraw();
         for (const Curve& c : curves)
         {
             // singles are the ones being studied: thicker trail and head
@@ -337,7 +245,19 @@ public:
             c.traj->drawHead();
             shader.setInt("u_round", 0);
         }
+        runner.endDraw();
         shader.setFloat("u_pointSize", particleSize);
+
+        if (!tangents.empty())
+        {
+            shader.setInt("u_useRamp", 0);
+            shader.setVec3("u_color", kTangentColor);
+            glLineWidth(3.0f);
+            tangents.drawShafts(shader);
+            shader.setInt("u_shadeMode", 1);
+            tangents.drawHeads(shader);
+            shader.setInt("u_shadeMode", 0);
+        }
         glLineWidth(1.0f);
 
         // translucent planes last, without depth writes, so everything shows through
@@ -373,13 +293,18 @@ public:
         ImGui::Spacing();
         ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.36f, 0.30f, 1.0f));
-        bool showOther = ImGui::CollapsingHeader("Other settings (arrows, trails)");
+        bool showOther = ImGui::CollapsingHeader("Other settings (camera, integrator, LaTeX, arrows, trails, performance)");
         ImGui::PopStyleColor();
         if (showOther)
         {
             ImGui::Indent();
+            drawViewUI();
+            drawIntegratorUI();
+            drawLatexUI();
             drawGlyphUI();
             drawTrailUI();
+            sectionHeader("Performance");
+            runner.drawUI();
             ImGui::Unindent();
         }
 
@@ -407,6 +332,9 @@ private:
         Kind kind;
         engine::LatexImage seedLabel;  // singles: "(x, y, z)" of the seed, typeset once
         float seedLabelSize = 0.0f;    // size seedLabel was typeset at
+        bool hasTangent = false;       // singles: tangent arrow drawn this frame
+        glm::vec3 tangentTip{0.0f};
+        bool withBall = false;         // the single at the ball's centre: goes with it
     };
 
     // Pieces of the \phi^t(x_0) label, each typeset once: the label is re-composed
@@ -421,13 +349,46 @@ private:
     struct SubspaceDraw {
         int lineFirst = 0, lineCount = 0;
         int triFirst = 0, triCount = 0;
-        int headFirst = 0, headCount = 0;   // flow-direction cones, in subspaceHeadMesh
         glm::vec3 color{1.0f};
         int kind = 0;                       // 0 = E^s, 1 = E^u, 2 = E^c
         glm::vec3 labelAnchor{0.0f};        // where its E^s/E^u/E^c label sits
     };
 
     // ---- UI -----------------------------------------------------------------
+
+    // Sizes of everything typeset: the equation, the phi^t labels (and x'), E^s/E^u/E^c.
+    void drawLatexUI()
+    {
+        sectionHeader("LaTeX");
+        if (ImGui::SliderFloat("equation", &systemLatexSize, 14.0f, 72.0f, "%.0f px"))
+            latexLambda[0] = NAN;   // re-typeset
+        ImGui::SliderFloat("phi^t labels", &timeLabelSize, 14.0f, 72.0f, "%.0f px");
+        ImGui::SliderFloat("E^s, E^u labels", &subspaceLabelSize, 14.0f, 140.0f, "%.0f px");
+    }
+
+    void drawViewUI()
+    {
+        sectionHeader("Camera");
+        ImGui::TextDisabled("A/D orbit, W/S tilt, Q/E zoom");
+        if (ImGui::Button("Reset camera"))
+        {
+            engine::Camera& cam = app->camera();
+            cam.orbitCenter = glm::vec3(0.0f);
+            cam.orbitRadius = 3.0f * domainR;
+            cam.orbitTheta = 0.6f;
+            cam.orbitPhi = 1.1f;
+        }
+    }
+
+    void drawIntegratorUI()
+    {
+        sectionHeader("Integrator");
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::Combo("method", &method, "Euler\0RK2 (midpoint)\0RK4\0");
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::DragFloat("max step h", &maxStep, 0.0005f, 1e-5f, 0.5f, "%.4f");
+        maxStep = std::clamp(maxStep, 1e-5f, 0.5f);
+    }
 
     // World point -> ImGui screen pixels; false when it is behind the camera or outside
     // the depth range.
@@ -537,10 +498,15 @@ private:
             x += 0.06f * S;
             place(c.seedLabel, 0.0f);
 
-            // centered above the particle; baseline clears the head and the
-            // parenthesis descender
+            // centered above the particle (baseline clears the head and the parenthesis
+            // descender) — or below it when its tangent arrow points up on screen, so the
+            // label and the arrow never cross
+            float headRadius = 0.5f * particleSize * singleScale;
+            float tx, ty;
+            bool arrowUp = c.hasTangent && toScreen(c.tangentTip, tx, ty) && ty < sy;
             float left = sx - 0.5f * x;
-            float baseY = sy - 0.5f * particleSize * singleScale - 0.35f * S;
+            float baseY = arrowUp ? sy + headRadius + 0.95f * S
+                                  : sy - headRadius - 0.35f * S;
             for (int i = 0; i < n; ++i)
                 pieces[i]->drawAt(left + xs[i], baseY + ys[i]);
         }
@@ -560,7 +526,7 @@ private:
                 num(lambda[0]) + R"( & 0 & 0 \\ 0 & )" + num(lambda[1]) +
                 R"( & 0 \\ 0 & 0 & )" + num(lambda[2]) +
                 R"(\end{pmatrix} \begin{pmatrix} x_1 \\ x_2 \\ x_3 )";
-            systemLatex.set(tex, 34.0f);
+            systemLatex.set(tex, systemLatexSize);
         }
         if (systemLatex.empty())
             return;
@@ -700,7 +666,7 @@ private:
         ImGui::SliderFloat("arrow alpha", &arrowAlpha, 0.05f, 1.0f);
         ImGui::SliderFloat("alpha gradient", &arrowTailAlpha, 0.0f, 1.0f, "tail %.2f of tip");
 
-        if (editedDone || (editedLive && arrowCount <= kLiveRebuildArrows))
+        if (editedDone || (editedLive && glyphs.arrows() <= kLiveRebuildArrows))
             arrowsDirty = true;
 
         ImGui::Checkbox("auto color scale", &autoColorScale);
@@ -711,7 +677,7 @@ private:
             if (ImGui::DragFloat("max |f|", &manualColorMax, 0.05f, 1e-3f, 1e6f))
                 arrowsDirty = true;
         }
-        ImGui::TextDisabled("sampled max |f| = %.4g   arrows = %d", sampledMaxMag, arrowCount);
+        ImGui::TextDisabled("sampled max |f| = %.4g   arrows = %d", sampledMaxMag, glyphs.arrows());
     }
 
     void drawFlowUI()
@@ -720,6 +686,8 @@ private:
         if (ImGui::Button(playing ? "Pause" : "Play"))
             playing = !playing;
         ImGui::SameLine();
+        ImGui::TextDisabled("%s", engine::FlowKeys::kHint);
+        ImGui::SameLine();
         ImGui::Checkbox("reverse", &reverse);
         ImGui::SameLine();
         if (ImGui::Button("Restart"))
@@ -727,7 +695,7 @@ private:
         ImGui::SameLine();
         if (ImGui::Button("Clear all"))
             curves.clear();
-        ImGui::SliderFloat("speed", &timeScale, 0.05f, 5.0f, "%.2f x");
+        ImGui::SliderFloat("speed", &timeScale, 0.0f, 5.0f, "%.2f x");
         ImGui::TextDisabled("%d trajectories total", (int)curves.size());
     }
 
@@ -740,11 +708,12 @@ private:
         ImGui::SliderInt("particles", &ballCount, 1, 1000);
         ImGui::Checkbox("fill volume", &ballFilled);
         ImGui::SameLine();
+        ImGui::Checkbox("single at center", &ballWithSingle);
         if (ImGui::Button("Drop ball"))
             dropBall(glm::vec3(ballCenter[0], ballCenter[1], ballCenter[2]));
         ImGui::SameLine();
         if (ImGui::Button("Remove ball"))
-            removeKind(Kind::Ball);
+            removeBall();
     }
 
     void drawSinglesUI()
@@ -754,8 +723,32 @@ private:
         ImGui::SliderFloat("click depth", &spawnDepth, 0.05f, 1.0f,
                            "%.2f of the way to the orbit center");
         ImGui::SliderFloat("singles thickness", &singleScale, 1.0f, 4.0f, "%.1f x");
+        ImGui::Checkbox("tangent vector x'", &showTangents);
+        if (showTangents)
+        {
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(140.0f);
+            ImGui::SliderFloat("##tangentSize", &tangentSize, 0.02f, 0.5f, "length %.2f");
+        }
         if (ImGui::Button("Clear singles"))
             removeKind(Kind::Single);
+
+        int singles = countSingles();
+        if (ImGui::Checkbox("camera follows a single", &followSingle) && !followSingle)
+            releaseFollow();
+        if (followSingle)
+        {
+            ImGui::SameLine();
+            ImGui::Checkbox("newest", &followNewest);
+            if (!followNewest && singles > 0)
+            {
+                int shown = std::clamp(followIndex, 0, singles - 1) + 1;
+                if (ImGui::SliderInt("follow #", &shown, 1, singles))
+                    followIndex = shown - 1;
+            }
+            ImGui::TextDisabled("%s", singles ? "A/D/W/S orbit and Q/E zoom around the particle"
+                                              : "(drop a single to follow it)");
+        }
     }
 
     void drawTrailUI()
@@ -808,7 +801,12 @@ private:
         subspacesDirty = false;
         subspaceDraws.clear();
         std::vector<float> buf;
-        std::vector<float> heads;
+        for (engine::ArrowGlyphs& cones : subspaceCones)
+        {
+            cones.clear();
+            cones.headFraction = 1.0f;   // all head, no shaft
+            cones.headWidth = 0.45f;
+        }
         float E = subspaceExtent;
 
         auto axis = [](int i) {
@@ -842,11 +840,9 @@ private:
 
             // cones along each half-axis pointing the way the flow goes: inward on E^s,
             // outward on E^u. E^c is at rest, so it gets none.
-            d.headFirst = (int)heads.size() / kFloatsPerHeadVertex;
             if (kind != 2)
             {
                 float coneLen = E * subspaceArrowSize;
-                std::vector<float> unusedShafts;
                 for (int i : span)
                     for (float side : {1.0f, -1.0f})
                         for (int k = 0; k < subspaceArrowCount; ++k)
@@ -855,11 +851,9 @@ private:
                             glm::vec3 dir = kind == 0 ? -ray : ray;
                             float at = E * ((float)k + 0.5f) / (float)subspaceArrowCount;
                             glm::vec3 start = ray * at - dir * (coneLen * 0.5f);
-                            pushArrow(unusedShafts, heads, start, dir, coneLen, 0.0f, false,
-                                      1.0f, 0.45f, {kMaxConeSegments, true});
+                            subspaceCones[kind].add(start, dir, coneLen, 0.0f);
                         }
             }
-            d.headCount = (int)heads.size() / kFloatsPerHeadVertex - d.headFirst;
 
             d.lineFirst = vertices();
             for (int i : span)
@@ -905,13 +899,121 @@ private:
 
         subspaceMesh->setVertices(buf.data(), buf.size(), 0);
 
-        int headVerts = (int)heads.size() / kFloatsPerHeadVertex;
-        if (headVerts > 0)
+        for (engine::ArrowGlyphs& cones : subspaceCones)
+            cones.upload();
+    }
+
+    // ---- follow camera + tangent vectors ----------------------------------------
+
+    int countSingles() const
+    {
+        int n = 0;
+        for (const Curve& c : curves)
+            n += c.kind == Kind::Single ? 1 : 0;
+        return n;
+    }
+
+    const Curve* followedSingle() const
+    {
+        int n = countSingles();
+        if (!followSingle || n == 0)
+            return nullptr;
+        int want = followNewest ? n - 1 : std::clamp(followIndex, 0, n - 1);
+        for (const Curve& c : curves)
+            if (c.kind == Kind::Single && want-- == 0)
+                return &c;
+        return nullptr;
+    }
+
+    // Orbit around the followed head: keep the orbit offset and move position with the
+    // centre in the same frame, so the view neither lags nor stops following while
+    // ImGui has the keyboard (when the camera's processInput is skipped).
+    void followCamera()
+    {
+        const Curve* c = followedSingle();
+        if (!c)
         {
-            if (!subspaceHeadMesh || subspaceHeadMesh->vertexCapacity() < headVerts)
-                subspaceHeadMesh = std::make_unique<engine::Mesh>(
-                    headVerts + headVerts / 4 + 64, std::vector<int>{3, 1, 1, 1});
-            subspaceHeadMesh->setVertices(heads.data(), heads.size(), 0);
+            following = false;
+            return;
+        }
+        engine::Camera& cam = app->camera();
+        glm::vec3 offset = cam.position - cam.orbitCenter;
+        glm::vec3 head = c->traj->head();
+        cam.orbitCenter = head;
+        cam.position = head + offset;
+        cam.front = glm::normalize(-offset);
+        following = true;
+    }
+
+    // Back to orbiting the saved centre (origin if none), same angles and distance.
+    void releaseFollow()
+    {
+        if (!following)
+            return;
+        following = false;
+        engine::Camera& cam = app->camera();
+        glm::vec3 offset = cam.position - cam.orbitCenter;
+        cam.orbitCenter = std::isnan(camRadius)
+                              ? glm::vec3(0.0f)
+                              : glm::vec3(camCenter[0], camCenter[1], camCenter[2]);
+        cam.position = cam.orbitCenter + offset;
+    }
+
+    // A red x' = Ax arrow out of every single's head, at constant on-screen size (a
+    // fraction of the camera distance). Rebuilt every frame — a handful of arrows.
+    void rebuildTangents()
+    {
+        tangents.clear();
+        for (Curve& c : curves)
+            c.hasTangent = false;
+        if (!showTangents)
+        {
+            tangents.upload();
+            return;
+        }
+
+        const glm::vec3 eye = app->camera().position;
+        for (Curve& c : curves)
+        {
+            if (c.kind != Kind::Single || c.traj->diverged())
+                continue;
+            glm::vec3 p = c.traj->head();
+            glm::vec3 vec(lambda[0] * p.x, lambda[1] * p.y, lambda[2] * p.z);
+            float mag = glm::length(vec);
+            if (!(mag > 1e-9f) || !std::isfinite(mag))
+                continue; // at the equilibrium there is no direction to draw
+            glm::vec3 dir = vec / mag;
+            float len = tangentSize * glm::length(eye - p);
+            tangents.add(p, dir, len, mag);
+            c.hasTangent = true;
+            c.tangentTip = p + dir * len;
+        }
+        tangents.upload();
+    }
+
+    // \dot{x} just beyond each tangent arrow's tip, continuing the arrow's on-screen
+    // direction so it never sits on the arrowhead; phi-label size, typeset once.
+    void drawTangentLabels()
+    {
+        if (!showTangents)
+            return;
+        if (tangentLabelSize != timeLabelSize)
+        {
+            tangentLabelSize = timeLabelSize;
+            tangentLabel.set(R"(\dot{x})", timeLabelSize, kTangentColor);
+        }
+        for (const Curve& c : curves)
+        {
+            float hx, hy, tx, ty;
+            if (!c.hasTangent || !toScreen(c.traj->head(), hx, hy) ||
+                !toScreen(c.tangentTip, tx, ty))
+                continue;
+            glm::vec2 d(tx - hx, ty - hy);
+            float len = glm::length(d);
+            d = len > 1e-3f ? d / len : glm::vec2(1.0f, 0.0f);
+            float w = (float)tangentLabel.width(), h = (float)tangentLabel.height();
+            float reach = 0.5f * (std::abs(d.x) * w + std::abs(d.y) * h) + 2.0f;
+            tangentLabel.drawAt(tx + d.x * reach - 0.5f * w, ty + d.y * reach - 0.5f * h);
         }
     }
 
@@ -997,7 +1099,15 @@ private:
     // ball deforming into an ellipsoid) or uniformly through its volume.
     void dropBall(const glm::vec3& center)
     {
-        removeKind(Kind::Ball);
+        removeBall();
+        // "single at center": a green single riding the middle of the ball, labelled and
+        // followable like any click-dropped one, removed with the ball
+        if (ballWithSingle)
+        {
+            addTrajectory(center, kSingleColor, Kind::Single);
+            if (!curves.empty())
+                curves.back().withBall = true;
+        }
         std::uniform_real_distribution<float> unit(-1.0f, 1.0f);
         const float golden = 2.39996323f;
 
@@ -1019,6 +1129,11 @@ private:
             }
             addTrajectory(center + p * ballRadius, kBallColor, Kind::Ball);
         }
+    }
+
+    void removeBall()
+    {
+        std::erase_if(curves, [](const Curve& c) { return c.kind == Kind::Ball || c.withBall; });
     }
 
     void addTrajectory(const glm::vec3& seed, const glm::vec3& color, Kind kind)
@@ -1061,6 +1176,8 @@ private:
             {"subspaceLabelAt", &subspaceLabelAt},
             {"showSystemLatex", nullptr, nullptr, &showSystemLatex},
             {"showTimeLabels", nullptr, nullptr, &showTimeLabels},
+            {"systemLatexSize", &systemLatexSize}, {"timeLabelSize", &timeLabelSize},
+            {"subspaceLabelSize", &subspaceLabelSize},
             {"subspaceExtent", &subspaceExtent}, {"planeAlpha", &planeAlpha},
             {"subspaceLineWidth", &subspaceLineWidth},
             {"showSubspaceArrows", nullptr, nullptr, &showSubspaceArrows},
@@ -1078,16 +1195,23 @@ private:
             {"manualColorMax", &manualColorMax},
             {"timeScale", &timeScale},
             {"reverse", nullptr, nullptr, &reverse},
+            {"method", nullptr, &method}, {"maxStep", &maxStep},
             {"ballCenterX", &ballCenter[0]}, {"ballCenterY", &ballCenter[1]},
             {"ballCenterZ", &ballCenter[2]},
             {"ballRadius", &ballRadius}, {"ballCount", nullptr, &ballCount},
             {"ballFilled", nullptr, nullptr, &ballFilled},
+            {"ballWithSingle", nullptr, nullptr, &ballWithSingle},
             {"showTrails", nullptr, nullptr, &showTrails},
             {"trailPoints", nullptr, &trailPoints},
             {"trailWidth", &trailWidth}, {"trailAlpha", &trailAlpha},
             {"particleSize", &particleSize},
             {"singleScale", &singleScale},
             {"spawnDepth", &spawnDepth},
+            {"showTangents", nullptr, nullptr, &showTangents},
+            {"tangentSize", &tangentSize},
+            {"followSingle", nullptr, nullptr, &followSingle},
+            {"followNewest", nullptr, nullptr, &followNewest},
+            {"followIndex", nullptr, &followIndex},
             {"cameraTheta", &camTheta}, {"cameraPhi", &camPhi},
             {"cameraRadius", &camRadius},
             {"cameraCenterX", &camCenter[0]}, {"cameraCenterY", &camCenter[1]},
@@ -1159,6 +1283,11 @@ private:
         // a hand-edited file should not be able to ask for a 1000^3 grid
         gridN = std::clamp(gridN, 2, 50);
         ballCount = std::clamp(ballCount, 1, 1000);
+        method = std::clamp(method, 0, 2);
+        maxStep = std::clamp(maxStep, 1e-5f, 0.5f);
+        systemLatexSize = std::clamp(systemLatexSize, 10.0f, 120.0f);
+        timeLabelSize = std::clamp(timeLabelSize, 10.0f, 120.0f);
+        subspaceLabelSize = std::clamp(subspaceLabelSize, 10.0f, 160.0f);
         subspaceArrowCount = std::clamp(subspaceArrowCount, 1, 8);
         subspaceArrowSize = std::clamp(subspaceArrowSize, 0.01f, 0.2f);
         trailPoints = std::clamp(trailPoints, 32, 5000);
@@ -1175,9 +1304,6 @@ private:
     void rebuildArrows()
     {
         arrowsDirty = false;
-        arrowVertexCount = 0;
-        headVertexCount = 0;
-        arrowCount = 0;
         sampledMaxMag = 0.0f;
 
         float spacing = 2.0f * domainR / (float)gridN;
@@ -1195,45 +1321,13 @@ private:
                     sampledMaxMag = std::max(sampledMaxMag, glm::length(v));
                 }
 
-        float scaleMax = colorMax();
-        float cutoff = hideBelow * scaleMax;
-        HeadLod lod = headLod((int)gridPoints.size());
-        arrowBuffer.clear();
-        headBuffer.clear();
-
-        for (size_t i = 0; i < gridPoints.size(); ++i)
-        {
-            float mag = glm::length(gridVectors[i]);
-            if (mag <= 1e-9f || mag < cutoff)
-                continue;
-
-            float len = spacing * arrowScale;
-            if (lengthByMagnitude)
-                len *= std::clamp(mag / std::max(scaleMax, 1e-6f), 0.05f, 1.0f);
-            pushArrow(arrowBuffer, headBuffer, gridPoints[i], gridVectors[i] / mag, len, mag,
-                      barbedHeads, headFraction, headWidth, lod);
-        }
-
-        int shafts = (int)arrowBuffer.size() / kFloatsPerShaftVertex;
-        arrowCount = shafts / shaftVerticesPerArrow(barbedHeads);
-        if (shafts == 0)
-            return;
-
-        if (!arrowMesh || arrowMesh->vertexCapacity() < shafts)
-            arrowMesh = std::make_unique<engine::Mesh>(shafts + shafts / 4 + 64,
-                                                       std::vector<int>{3, 1, 1});
-        arrowMesh->setVertices(arrowBuffer.data(), arrowBuffer.size(), 0);
-        arrowVertexCount = shafts;
-
-        int heads = (int)headBuffer.size() / kFloatsPerHeadVertex;
-        if (heads > 0)
-        {
-            if (!headMesh || headMesh->vertexCapacity() < heads)
-                headMesh = std::make_unique<engine::Mesh>(heads + heads / 4 + 64,
-                                                          std::vector<int>{3, 1, 1, 1});
-            headMesh->setVertices(headBuffer.data(), headBuffer.size(), 0);
-        }
-        headVertexCount = heads;
+        glyphs.clear();
+        glyphs.barbs = barbedHeads;
+        glyphs.headFraction = headFraction;
+        glyphs.headWidth = headWidth;
+        glyphs.addField(gridPoints, gridVectors, spacing * arrowScale, colorMax(), hideBelow,
+                        lengthByMagnitude);
+        glyphs.upload();
     }
 
     static constexpr int kSubspaceCapacity = 256;
@@ -1244,9 +1338,8 @@ private:
     engine::Shader shader;
     std::unique_ptr<engine::Mesh> axisMesh;
     std::unique_ptr<engine::Mesh> subspaceMesh;
-    std::unique_ptr<engine::Mesh> subspaceHeadMesh;
-    std::unique_ptr<engine::Mesh> arrowMesh;
-    std::unique_ptr<engine::Mesh> headMesh;
+    engine::ArrowGlyphs subspaceCones[3]; // flow-direction cones per subspace kind (heads only)
+    engine::ArrowGlyphs glyphs;          // the field's arrow grid
 
     float lambda[3] = {1.0f, -1.0f, -2.0f};
     engine::LatexImage systemLatex;           // x' = Ax overlay, top-right
@@ -1254,8 +1347,11 @@ private:
     bool showSystemLatex = true;
     bool showTimeLabels = true;               // \phi^t(x_0) above single particles
     float timeLabelSize = 36.0f;
+    float systemLatexSize = 34.0f;            // the x' = Ax overlay, px
     TimeLabelGlyphs timeGlyphs;
     engine::Integrator integrator;
+    int method = 2;                   // Integrator::Method, RK4
+    float maxStep = 0.01f;
     engine::Integrator::Field rhs;
     std::vector<Curve> curves;
     std::string settingsStatus;
@@ -1293,13 +1389,8 @@ private:
     bool autoColorScale = true;
     float manualColorMax = 5.0f;
     float sampledMaxMag = 0.0f;
-    int arrowCount = 0;
-    int arrowVertexCount = 0;
-    int headVertexCount = 0;
     std::vector<glm::vec3> gridPoints;
     std::vector<glm::vec3> gridVectors;
-    std::vector<float> arrowBuffer;
-    std::vector<float> headBuffer;
 
     // flow + balls
     bool playing = true;
@@ -1313,6 +1404,17 @@ private:
     float singleScale = 2.0f;        // singles' trail width and head size multiplier
     float spawnDepth = 0.3f;         // click seeds: fraction of camera -> orbit center
 
+    // tangent arrows on singles (rebuilt every frame) + the follow camera
+    bool showTangents = true;
+    float tangentSize = 0.12f;       // fraction of the camera distance
+    engine::ArrowGlyphs tangents;    // x' arrows
+    engine::LatexImage tangentLabel; // \dot{x}
+    float tangentLabelSize = 0.0f;
+    bool followSingle = false;
+    bool followNewest = true;
+    int followIndex = 0;             // drop order, 0-based, when not following the newest
+    bool following = false;          // the camera is currently tracking a single
+
     // saved orbit view (see captureCamera / applySavedCamera); NaN until saved
     float camTheta = NAN, camPhi = NAN, camRadius = NAN;
     float camCenter[3] = {0.0f, 0.0f, 0.0f};
@@ -1322,7 +1424,9 @@ private:
     float ballRadius = 0.4f;
     int ballCount = 200;
     bool ballFilled = false;
+    bool ballWithSingle = false;     // drop a followable single at the ball's centre too
     std::mt19937 rng{1234};
+    engine::TrajectoryRunner runner; // advances the curves, times integrate/upload/draw
 };
 
 } // namespace

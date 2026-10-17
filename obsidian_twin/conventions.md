@@ -32,3 +32,9 @@ The standalone executable `<name>_standalone` comes for free from `add_sim()`
 ## Asset paths
 Shaders are loaded with the `SIMS_DIR` compile definition (absolute path to `sims/`),
 e.g. `SIMS_DIR "riemann_sphere/shaders/vertex.glsl"`. No copying to the build tree.
+
+## Math tests
+`math`-layer modules get checks in `tests/math_tests.cpp` (target `math_tests`, also
+`ctest`). The test target compiles the module sources directly without the engine lib,
+so a stray glm/glad include in a math module fails the build — the std-only rule is
+enforced there. Run `out/build/x64-debug/tests/math_tests.exe`; exit 1 on any failure.

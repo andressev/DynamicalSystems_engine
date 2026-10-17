@@ -1,6 +1,7 @@
 # 0006 — Vector fields are sampled on the CPU into a dynamic mesh
 
-**Date:** 2026-09-24 · **Status:** accepted
+**Date:** 2026-09-24 · **Status:** accepted; point 2 superseded by
+[[0008-gpu-work-split-vertex-stage-and-cuda]] (glyphs are instanced now)
 
 ## Context
 Every sim so far evaluates the user's typed function **in a shader**: [[Expression]]

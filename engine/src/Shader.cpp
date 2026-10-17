@@ -144,6 +144,13 @@ void Shader::setMat4(const std::string& name, const glm::mat4& mat) const
     glUniformMatrix4fv(glGetUniformLocation(ID, name.c_str()), 1, GL_FALSE, glm::value_ptr(mat));
 }
 
+void Shader::bindUniformBlock(const std::string& blockName, unsigned int binding) const
+{
+    unsigned int index = glGetUniformBlockIndex(ID, blockName.c_str());
+    if (index != GL_INVALID_INDEX)
+        glUniformBlockBinding(ID, index, binding);
+}
+
 void Shader::checkCompileErrors(unsigned int shader, const std::string& type)
 {
     int success;

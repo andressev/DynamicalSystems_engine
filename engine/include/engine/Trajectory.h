@@ -3,6 +3,7 @@
 
 #include <engine/Integrator.h>
 #include <engine/Mesh.h>
+#include <engine/TaylorIntegrator.h>
 
 #include <glm.hpp>
 #include <vector>
@@ -38,6 +39,20 @@ public:
     // time scale makes the trail denser per frame, never coarser. Stops for good once the state leaves kEscape or goes
     // non-finite — a blown-up curve stays on screen instead of poisoning the buffer.
     void advance(const Integrator& integrator, const Integrator::Field& f, double dt);
+
+    // advance() in two halves, so many curves can integrate in parallel: integrate()
+    // steps the ODE and records the points on the CPU only (no GL — safe from worker
+    // threads as long as `f` is thread-safe, one thread per Trajectory); flush() uploads
+    // what integrate() wrote since the last flush, and must run on the GL thread before
+    // the next draw. advance() == integrate() + flush(); the trail is identical either way.
+    void integrate(const Integrator& integrator, const Integrator::Field& f, double dt);
+    void flush();
+
+    // integrate() with the Taylor method instead: adaptive steps from `jet`, and the
+    // trail sampled from each step's polynomial at most sampleStep apart (dense output),
+    // so it is as smooth as an RK trail at maxStep = sampleStep. Same threading rules.
+    void integrate(const TaylorIntegrator& taylor, const TaylorIntegrator::Jet& jet,
+                   double dt, double sampleStep);
 
     void draw() const;      // GL_LINE_STRIP over the live trail, oldest vertex first
     void drawHead() const;  // GL_POINTS, the newest point only
@@ -93,6 +108,8 @@ private:
     int capacity = 0;
     int count = 0;   // live points, <= capacity
     int write = 0;   // next slot to write (and, once full, the oldest point)
+    int dirtyFirst = 0;   // ring slots integrate() wrote that flush() has yet to upload
+    int dirtyCount = 0;
     std::vector<float> cpu;          // 2 * capacity * kFloatsPerPoint
     Mesh mesh;
 };

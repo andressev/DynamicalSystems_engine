@@ -39,11 +39,19 @@ void Trajectory::reset(const double* seed, double t0)
     blownUp = false;
     count = 0;
     write = 0;
+    dirtyCount = 0;
     appendPoint(head(), 0.0f);
 }
 
 void Trajectory::advance(const Integrator& integrator, const Integrator::Field& f,
                          double dt)
+{
+    integrate(integrator, f, dt);
+    flush();
+}
+
+void Trajectory::integrate(const Integrator& integrator, const Integrator::Field& f,
+                           double dt)
 {
     if (blownUp || dt == 0.0)
         return;
@@ -58,9 +66,13 @@ void Trajectory::advance(const Integrator& integrator, const Integrator::Field& 
         n = kMaxSubsteps;
     double h = dt / n;
 
-    // the newest slot is the live tip and may be moved in place, so it is dirty too
-    int firstSlot = newestSlot();
-    int appended = 0;
+    // the newest slot is the live tip and may be moved in place, so it is dirty too;
+    // the dirty run grows across integrate() calls until flush() uploads it
+    if (dirtyCount == 0)
+    {
+        dirtyFirst = newestSlot();
+        dirtyCount = 1;
+    }
     for (int k = 0; k < n; ++k)
     {
         double before[Integrator::kMaxDim];
@@ -79,10 +91,58 @@ void Trajectory::advance(const Integrator& integrator, const Integrator::Field& 
 
         f(x, t, vel);
         if (appendPoint(head(), (float)speed(), false))
-            ++appended;
+            ++dirtyCount;
+    }
+}
+
+void Trajectory::integrate(const TaylorIntegrator& taylor, const TaylorIntegrator::Jet& jet,
+                           double dt, double sampleStep)
+{
+    if (blownUp || dt == 0.0)
+        return;
+    if (dirtyCount == 0)
+    {
+        dirtyFirst = newestSlot();
+        dirtyCount = 1;
     }
 
-    uploadSlots(firstSlot, appended + 1);
+    // every sample (dense points and step ends) goes into the trail; the first
+    // non-finite one stops the curve at the last good point
+    double good[Integrator::kMaxDim];
+    std::memcpy(good, x, sizeof(good));
+    double tGood = t;
+    bool bad = false;
+    taylor.advance(jet, d, x, t, dt, sampleStep,
+                   [&](const double* p, const double* dp, double tp) {
+                       if (bad)
+                           return;
+                       if (!finiteState(p, d))
+                       {
+                           bad = true;
+                           return;
+                       }
+                       std::memcpy(good, p, sizeof(double) * d);
+                       tGood = tp;
+                       for (int i = 0; i < d; ++i)
+                           vel[i] = dp[i];
+                       glm::vec3 point((float)p[0], (float)p[1], d > 2 ? (float)p[2] : 0.0f);
+                       if (appendPoint(point, (float)speed(), false))
+                           ++dirtyCount;
+                   });
+    if (bad || !finiteState(x, d))
+    {
+        std::memcpy(x, good, sizeof(good));
+        t = tGood;
+        blownUp = true;
+    }
+}
+
+void Trajectory::flush()
+{
+    if (dirtyCount == 0)
+        return;
+    uploadSlots(dirtyFirst, dirtyCount);   // >= capacity falls back to one full upload
+    dirtyCount = 0;
 }
 
 int Trajectory::newestSlot() const
@@ -202,6 +262,7 @@ void Trajectory::setMaxPoints(int n)
     capacity = wanted;
     count = keep;
     write = keep % wanted;
+    dirtyCount = 0;   // the full upload below covers anything pending
     mesh = Mesh(capacity * 2, std::vector<int>{3, 1});
     uploadAll();
 }

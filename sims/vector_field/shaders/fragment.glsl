@@ -3,25 +3,22 @@
 in float vMag;
 in float vFade;
 in float vShade;
-in float vFocus;
 out vec4 FragColor;
 
 uniform int u_useRamp;     // 1 = color by magnitude, 0 = flat u_color
 uniform vec3 u_color;
 uniform float u_alpha;     // overall opacity of this draw
 uniform float u_alphaTail; // opacity multiplier at the faded end (vFade = 0)
-uniform int u_round;       // 1 = points are discs instead of squares
-uniform int u_shadePoint;  // 1 = shade the disc like a little sphere
+uniform int u_round;       // 1 = points are shaded discs instead of squares
 
-// Cold-to-hot ramp: slow regions read blue, fast ones red. Piecewise linear over
-// four stops, which keeps the mid-range readable better than a plain blue->red mix.
+// Same cold-to-hot ramp as vector_field: slow reads blue, fast reads red.
 vec3 ramp(float s)
 {
-    vec3 c0 = vec3(0.16, 0.26, 0.90); // slow
+    vec3 c0 = vec3(0.16, 0.26, 0.90);
     vec3 c1 = vec3(0.10, 0.80, 0.85);
     vec3 c2 = vec3(0.55, 0.90, 0.25);
     vec3 c3 = vec3(0.98, 0.80, 0.15);
-    vec3 c4 = vec3(0.95, 0.20, 0.18); // fast
+    vec3 c4 = vec3(0.95, 0.20, 0.18);
 
     float x = clamp(s, 0.0, 1.0) * 4.0;
     if (x < 1.0) return mix(c0, c1, x);
@@ -32,30 +29,22 @@ vec3 ramp(float s)
 
 void main()
 {
-    // vShade is 1 everywhere except on arrowhead facets, which carry a lambert term
-    // baked per triangle on the CPU — that is what makes a cone read as a solid
-    // volume rather than a flat silhouette.
     vec3 rgb = ((u_useRamp == 1) ? ramp(vMag) : u_color) * vShade;
-    float alpha = u_alpha * mix(u_alphaTail, 1.0, vFade) * vFocus;
+    float alpha = u_alpha * mix(u_alphaTail, 1.0, vFade);
 
     if (u_round == 1)
     {
-        // gl_PointCoord is only meaningful for GL_POINTS, which is the only case that
-        // sets u_round: cut the quad down to a disc with a soft rim.
         vec2 d = gl_PointCoord - vec2(0.5);
         float r = length(d) * 2.0;
         if (r > 1.0)
             discard;
         alpha *= smoothstep(1.0, 0.8, r);
-        if (u_shadePoint == 1)
-        {
-            // fake a lit sphere so a particle reads as a bead, not a sticker
-            float lambert = clamp(sqrt(max(0.0, 1.0 - r * r)) * 0.55
-                                  + dot(normalize(vec3(d.x, -d.y, 0.75)),
-                                        normalize(vec3(-0.4, 0.5, 0.75))) * 0.45,
-                                  0.0, 1.0);
-            rgb *= 0.55 + 0.65 * lambert;
-        }
+        // fake a lit sphere so a particle reads as a bead
+        float lambert = clamp(sqrt(max(0.0, 1.0 - r * r)) * 0.55
+                              + dot(normalize(vec3(d.x, -d.y, 0.75)),
+                                    normalize(vec3(-0.4, 0.5, 0.75))) * 0.45,
+                              0.0, 1.0);
+        rgb *= 0.55 + 0.65 * lambert;
     }
 
     FragColor = vec4(rgb, alpha);

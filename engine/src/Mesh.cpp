@@ -35,6 +35,7 @@ Mesh::Mesh(const std::vector<float>& vertices,
 
     glBindVertexArray(0); //bind the VAO
     count = (int)indices.size();
+    attribCount = (int)layout.size();
 }
 
 Mesh::Mesh(int vertexCapacity, const std::vector<int>& layout)
@@ -64,6 +65,7 @@ Mesh::Mesh(int vertexCapacity, const std::vector<int>& layout)
     }
 
     glBindVertexArray(0);
+    attribCount = (int)layout.size();
 }
 
 Mesh::~Mesh()
@@ -72,12 +74,15 @@ Mesh::~Mesh()
 }
 
 Mesh::Mesh(Mesh&& other) noexcept
-    : VAO(other.VAO), VBO(other.VBO), EBO(other.EBO), count(other.count),
-      capacity(other.capacity), floatsPerVertex(other.floatsPerVertex)
+    : VAO(other.VAO), VBO(other.VBO), EBO(other.EBO), instVBO(other.instVBO),
+      count(other.count), capacity(other.capacity), floatsPerVertex(other.floatsPerVertex),
+      attribCount(other.attribCount), instCapacity(other.instCapacity),
+      floatsPerInstance(other.floatsPerInstance)
 {
-    other.VAO = other.VBO = other.EBO = 0;
+    other.VAO = other.VBO = other.EBO = other.instVBO = 0;
     other.count = 0;
-    other.capacity = other.floatsPerVertex = 0;
+    other.capacity = other.floatsPerVertex = other.attribCount = 0;
+    other.instCapacity = other.floatsPerInstance = 0;
 }
 
 Mesh& Mesh::operator=(Mesh&& other) noexcept
@@ -88,12 +93,17 @@ Mesh& Mesh::operator=(Mesh&& other) noexcept
         VAO = other.VAO;
         VBO = other.VBO;
         EBO = other.EBO;
+        instVBO = other.instVBO;
         count = other.count;
         capacity = other.capacity;
         floatsPerVertex = other.floatsPerVertex;
-        other.VAO = other.VBO = other.EBO = 0;
+        attribCount = other.attribCount;
+        instCapacity = other.instCapacity;
+        floatsPerInstance = other.floatsPerInstance;
+        other.VAO = other.VBO = other.EBO = other.instVBO = 0;
         other.count = 0;
-        other.capacity = other.floatsPerVertex = 0;
+        other.capacity = other.floatsPerVertex = other.attribCount = 0;
+        other.instCapacity = other.floatsPerInstance = 0;
     }
     return *this;
 }
@@ -123,6 +133,56 @@ void Mesh::drawArrays(GLenum mode, int vertexCount, int first) const
     glDrawArrays(mode, first, vertexCount);
 }
 
+void Mesh::setInstanceLayout(int instanceCapacity, const std::vector<int>& layout)
+{
+    if (VAO == 0)
+        return;
+    int stride = 0;
+    for (int size : layout)
+        stride += size;
+
+    glBindVertexArray(VAO);
+    if (instVBO == 0)
+        glGenBuffers(1, &instVBO);
+    instCapacity = instanceCapacity > 0 ? instanceCapacity : 0;
+    floatsPerInstance = stride;
+    glBindBuffer(GL_ARRAY_BUFFER, instVBO);
+    glBufferData(GL_ARRAY_BUFFER, (size_t)instCapacity * stride * sizeof(float), nullptr,
+                 GL_DYNAMIC_DRAW);
+
+    int offset = 0;
+    for (int i = 0; i < (int)layout.size(); ++i)
+    {
+        int loc = attribCount + i;
+        glVertexAttribPointer(loc, layout[i], GL_FLOAT, GL_FALSE, stride * sizeof(float),
+                              (void*)(offset * sizeof(float)));
+        glEnableVertexAttribArray(loc);
+        glVertexAttribDivisor(loc, 1);
+        offset += layout[i];
+    }
+    glBindVertexArray(0);
+}
+
+void Mesh::setInstances(const float* data, size_t floatCount)
+{
+    if (instVBO == 0 || floatCount == 0
+        || floatCount > (size_t)instCapacity * floatsPerInstance)
+        return;
+    glBindBuffer(GL_ARRAY_BUFFER, instVBO);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, floatCount * sizeof(float), data);
+}
+
+void Mesh::drawInstanced(GLenum mode, int instanceCount, int vertexCount) const
+{
+    if (instanceCount <= 0 || instVBO == 0)
+        return;
+    glBindVertexArray(VAO);
+    if (EBO != 0 && count > 0)
+        glDrawElementsInstanced(mode, count, GL_UNSIGNED_INT, 0, instanceCount);
+    else if (vertexCount > 0)
+        glDrawArraysInstanced(mode, 0, vertexCount, instanceCount);
+}
+
 void Mesh::release()
 {
     if (VAO != 0)
@@ -131,8 +191,11 @@ void Mesh::release()
         glDeleteBuffers(1, &VBO);
         if (EBO != 0)              // dynamic meshes carry no index buffer
             glDeleteBuffers(1, &EBO);
-        VAO = VBO = EBO = 0;
-        count = capacity = floatsPerVertex = 0;
+        if (instVBO != 0)
+            glDeleteBuffers(1, &instVBO);
+        VAO = VBO = EBO = instVBO = 0;
+        count = capacity = floatsPerVertex = attribCount = 0;
+        instCapacity = floatsPerInstance = 0;
     }
 }
 

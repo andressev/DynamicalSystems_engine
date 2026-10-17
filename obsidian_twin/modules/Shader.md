@@ -25,6 +25,9 @@ Attach = hold a plain `Shader` member, move-assign in `init`:
 2. In `init`: `shader = Shader(vertexPath, fragmentPath);` — paths via
    `SIMS_DIR "<name>/shaders/file.glsl"`.
 3. In `render`: `shader.use();` then `setBool/Int/Float/Vec2/Vec3/Vec4/Mat4(name, ...)`.
+   Uniform buffers: once after creating the program,
+   `shader.bindUniformBlock(blockName, binding)` links a GLSL uniform block to the
+   binding point an engine module binds its buffer to ([[ConjugacyMap]]).
 4. Reference sim: [[riemann-sphere]].
 
 For runtime-generated GLSL: `Shader::fromSources(vertexSrc, fragmentSrc)` compiles from

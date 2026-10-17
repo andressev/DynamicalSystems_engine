@@ -9,4 +9,6 @@ target_link_libraries(explorer PRIVATE
     sim_lorenz_manifold
     sim_vector_field
     sim_diagonal_linear
+    sim_lorenz_flow
+    sim_lorenz_equilibrium
 )

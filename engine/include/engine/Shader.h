@@ -35,6 +35,10 @@ public:
     void setVec4(const std::string& name, float x, float y, float z, float w) const;
     void setVec4(const std::string& name, const glm::vec4& value) const;
     void setMat4(const std::string& name, const glm::mat4& mat) const;
+    // Attach the uniform block `blockName` to buffer binding point `binding` (where an
+    // engine module binds its uniform buffer, e.g. ConjugacyMap). No-op if the program
+    // has no such block (the compiler drops unused ones).
+    void bindUniformBlock(const std::string& blockName, unsigned int binding) const;
 
 private:
     void compile(const char* vertexSrc, const char* fragmentSrc);

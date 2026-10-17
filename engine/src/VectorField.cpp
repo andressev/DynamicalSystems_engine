@@ -38,7 +38,6 @@ bool VectorField::set(int dim, const std::vector<std::string>& components,
     comps = std::move(parsed);
     vars = std::move(names);
     srcs = components;
-    scratch.assign(d + 1, 0.0);
 
     timeDependent = false;
     for (const Expression& e : comps)
@@ -52,6 +51,10 @@ void VectorField::eval(const double* x, double t, double* out) const
     if (d <= 0)
         return;
 
+    // one value array per thread, so eval() may run on many threads at once (the
+    // glyph grid samples in parallel); reused across calls, so no allocation per call
+    thread_local std::vector<double> scratch;
+    scratch.resize(d + 1);
     for (int i = 0; i < d; ++i)
         scratch[i] = x[i];
     scratch[d] = t;
@@ -68,6 +71,14 @@ double VectorField::magnitude(const double* x, double t) const
     for (int i = 0; i < d; ++i)
         sum += v[i] * v[i];
     return std::sqrt(sum);
+}
+
+std::vector<std::string> VectorField::latex() const
+{
+    std::vector<std::string> out;
+    for (const Expression& e : comps)
+        out.push_back(e.latex(vars));
+    return out;
 }
 
 } // namespace engine

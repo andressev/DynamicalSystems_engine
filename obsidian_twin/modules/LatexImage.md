@@ -36,9 +36,11 @@ texture and drawn with `ImGui::Image`. Motivated by
 Interface:
 - `set(latex, textSize = 22, color = white)` — typeset; `textSize` is pixels per em.
 - `draw()` — `ImGui::Image` at natural pixel size.
-- `drawAt(x, y, alpha)` — top-left at a screen point (ImGui display pixels) on the
-  background draw list: over the 3D scene, under every ImGui window. For labels that
-  follow something in the world, project it with the [[Camera]] matrices first.
+- `drawAt(x, y, alpha, foreground = false)` — top-left at a screen point (ImGui display
+  pixels) on the background draw list: over the 3D scene, under every ImGui window; with
+  `foreground` on the foreground list, over the windows too (titles a panel must never
+  hide — [[lorenz-equilibrium]]'s ball names). For labels that follow something in the
+  world, project it with the [[Camera]] matrices first.
 - `baseline()`, `advance()`, `kPad` — for composing pieces on one line: the image is the
   TeX box plus `kPad` px all round; `baseline()` is px from the image top,
   `advance()` the box width.

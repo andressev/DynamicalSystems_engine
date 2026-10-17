@@ -3,6 +3,7 @@ type: math
 status: wip
 code:
   - sims/lorenz_manifold/LorenzManifoldSim.cpp
+  - engine/src/InvariantManifold.cpp
 ---
 # lorenz-stable-manifold
 
@@ -51,6 +52,11 @@ $K$.
 order-by-order coefficient recursion via `S` and `solve3x3`), `evalK` (Taylor
 evaluation), `equalArcResample` (arc-length remeshing of a ring, step 5 of the
 build). All in `double`; only the final GL vertex buffer is cast to `float`.
+
+Generalized in [[InvariantManifold]] (any equilibrium of a quadratic field, stable or
+unstable side, complex-conjugate pairs via variables $(z,\bar z)$); its test
+reproduces this sim's coefficients after rescaling the eigenvectors. Porting the sim
+onto the module is optional.
 
 ## Pitfalls
 - $K$ is only accurate inside its Taylor series' radius of convergence; rings drawn

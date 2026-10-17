@@ -32,10 +32,10 @@ Knobs:
   `Free` (WASD translate; rotation TODO).
 - `processInput(GLFWwindow*, float dt)` — called by [[App]], dt from its single clock.
 - `inputEnabled` (true) — when false, `processInput` is a no-op; for sims that
-  repurpose WASD/QE ([[riemann-sphere]]'s plane mode), or that drive `position`/`front`
-  themselves ([[vector-field]]'s chase camera — orbit mode would otherwise recompute
-  `position` from `orbitCenter` every frame and undo it). A sim that clears it must
-  restore it.
+  repurpose WASD/QE ([[riemann-sphere]]'s plane mode, [[vector-field]]'s R2 pan/zoom),
+  or that drive `position`/`front` themselves (a chase camera — orbit mode would
+  otherwise recompute `position` from `orbitCenter` every frame and undo it). A sim
+  that clears it must restore it.
 - `speed` (1.5) — **translation** rate, world units per second: free-mode movement and
   orbit zoom. A sim with a large scene scales this up.
 - `orbitAngularSpeed` (1.5) — **rotation** rate, radians per second. Deliberately

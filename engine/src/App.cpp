@@ -5,12 +5,110 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
+#include <algorithm>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <vector>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
 namespace engine {
+
+namespace {
+
+constexpr float kClearColor[4] = {0.06f, 0.06f, 0.08f, 1.0f};
+
+// Minimal PNG encoder for screenshots: 8-bit RGB, rows unfiltered, deflate in stored
+// (uncompressed) blocks — no zlib dependency, at the cost of raw-sized files.
+// `rgb` is top-row first.
+bool writePng(const std::string& path, const std::vector<unsigned char>& rgb, int w, int h)
+{
+    static uint32_t crcTable[256];
+    static bool tableReady = false;
+    if (!tableReady)
+    {
+        for (uint32_t n = 0; n < 256; ++n)
+        {
+            uint32_t c = n;
+            for (int k = 0; k < 8; ++k)
+                c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+            crcTable[n] = c;
+        }
+        tableReady = true;
+    }
+
+    std::vector<unsigned char> raw; // zlib payload input: filter byte + row, per row
+    raw.reserve((size_t)h * (w * 3 + 1));
+    for (int y = 0; y < h; ++y)
+    {
+        raw.push_back(0);
+        raw.insert(raw.end(), rgb.begin() + (size_t)y * w * 3, rgb.begin() + (size_t)(y + 1) * w * 3);
+    }
+
+    std::vector<unsigned char> z = {0x78, 0x01}; // zlib header, no compression
+    for (size_t pos = 0; pos < raw.size() || pos == 0;)
+    {
+        size_t len = std::min<size_t>(65535, raw.size() - pos);
+        bool last = pos + len == raw.size();
+        z.push_back(last ? 1 : 0);
+        z.push_back(len & 0xFF);
+        z.push_back((len >> 8) & 0xFF);
+        z.push_back(~len & 0xFF);
+        z.push_back((~len >> 8) & 0xFF);
+        z.insert(z.end(), raw.begin() + pos, raw.begin() + pos + len);
+        pos += len;
+        if (last)
+            break;
+    }
+    uint32_t a = 1, b = 0; // adler32 of the uncompressed data
+    for (unsigned char c : raw)
+    {
+        a = (a + c) % 65521;
+        b = (b + a) % 65521;
+    }
+    uint32_t adler = (b << 16) | a;
+    for (int i = 3; i >= 0; --i)
+        z.push_back((adler >> (8 * i)) & 0xFF);
+
+    std::ofstream out(path, std::ios::binary);
+    if (!out)
+        return false;
+    auto put32 = [&](uint32_t v) {
+        for (int i = 3; i >= 0; --i)
+            out.put((char)((v >> (8 * i)) & 0xFF));
+    };
+    auto chunk = [&](const char* type, const std::vector<unsigned char>& data) {
+        put32((uint32_t)data.size());
+        uint32_t crc = 0xFFFFFFFFu;
+        for (int i = 0; i < 4; ++i)
+            crc = crcTable[(crc ^ (unsigned char)type[i]) & 0xFF] ^ (crc >> 8);
+        for (unsigned char c : data)
+            crc = crcTable[(crc ^ c) & 0xFF] ^ (crc >> 8);
+        out.write(type, 4);
+        out.write((const char*)data.data(), (std::streamsize)data.size());
+        put32(crc ^ 0xFFFFFFFFu);
+    };
+
+    static const unsigned char signature[8] = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+    out.write((const char*)signature, 8);
+    std::vector<unsigned char> ihdr(13, 0);
+    for (int i = 0; i < 4; ++i)
+    {
+        ihdr[i] = (w >> (24 - 8 * i)) & 0xFF;
+        ihdr[4 + i] = (h >> (24 - 8 * i)) & 0xFF;
+    }
+    ihdr[8] = 8; // bit depth
+    ihdr[9] = 2; // color type: RGB
+    chunk("IHDR", ihdr);
+    chunk("IDAT", z);
+    chunk("IEND", {});
+    return (bool)out;
+}
+
+} // namespace
 
 App::App(const char* title, int width, int height)
     : win(title, width, height)
@@ -95,7 +193,7 @@ int App::run(const std::string& startSim)
         if (activeSim)
             activeSim->update(dt);
 
-        glClearColor(0.06f, 0.06f, 0.08f, 1.0f);
+        glClearColor(kClearColor[0], kClearColor[1], kClearColor[2], kClearColor[3]);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         if (activeSim)
@@ -117,6 +215,15 @@ int App::run(const std::string& startSim)
             activeSim.reset();
             activeIndex = -1;
             wantMenu = false;
+            pendingSwitch = -1;
+        }
+        else if (pendingSwitch >= 0)
+        {
+            int target = pendingSwitch;
+            pendingSwitch = -1;
+            handoffValues = std::move(pendingHandoff);
+            pendingHandoff.clear();
+            switchTo(target);
         }
 
         win.swapBuffers();
@@ -130,6 +237,99 @@ void App::switchTo(int index)
     activeSim = registry.createByIndex(index);
     activeIndex = index;
     activeSim->init(*this);
+}
+
+bool App::requestSwitch(const std::string& name, Handoff values)
+{
+    int index = registry.indexOf(name);
+    if (index < 0)
+        return false;
+    pendingSwitch = index;
+    pendingHandoff = std::move(values);
+    return true;
+}
+
+bool App::captureScreenshot(const std::string& path, int scale)
+{
+    if (!activeSim || win.width() <= 0 || win.height() <= 0)
+        return false;
+
+    GLint maxSize = 0, maxSamples = 0;
+    glGetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &maxSize);
+    glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+    scale = std::max(1, scale);
+    while (scale > 1 && std::max(win.width(), win.height()) * scale > maxSize)
+        --scale;
+    const int w = win.width() * scale, h = win.height() * scale;
+    const int samples = std::clamp((int)maxSamples, 1, 8);
+
+    // [0] multisampled color + depth the sim renders into, [1] single-sample resolve target
+    GLuint fbo[2] = {0, 0}, rb[3] = {0, 0, 0};
+    glGenFramebuffers(2, fbo);
+    glGenRenderbuffers(3, rb);
+    glBindRenderbuffer(GL_RENDERBUFFER, rb[0]);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_RGBA8, w, h);
+    glBindRenderbuffer(GL_RENDERBUFFER, rb[1]);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_DEPTH24_STENCIL8, w, h);
+    glBindRenderbuffer(GL_RENDERBUFFER, rb[2]);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, w, h);
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo[1]);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rb[2]);
+    bool ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo[0]);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rb[0]);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rb[1]);
+    ok = ok && glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+
+    std::vector<unsigned char> pixels;
+    if (ok)
+    {
+        glViewport(0, 0, w, h);
+        glClearColor(kClearColor[0], kClearColor[1], kClearColor[2], kClearColor[3]);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        captureScale = (float)scale;
+        activeSim->render(cam);
+        captureScale = 1.0f;
+
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo[0]);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo[1]);
+        glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo[1]);
+        pixels.resize((size_t)w * h * 3);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, win.width(), win.height());
+    glDeleteFramebuffers(2, fbo);
+    glDeleteRenderbuffers(3, rb);
+    if (!ok)
+    {
+        std::cout << "App::captureScreenshot: offscreen framebuffer incomplete" << std::endl;
+        return false;
+    }
+
+    // GL rows run bottom-up; PNG rows top-down
+    const size_t row = (size_t)w * 3;
+    std::vector<unsigned char> flipped(pixels.size());
+    for (int y = 0; y < h; ++y)
+        std::copy_n(pixels.begin() + (size_t)(h - 1 - y) * row, row, flipped.begin() + (size_t)y * row);
+
+    std::error_code ec;
+    std::filesystem::path parent = std::filesystem::path(path).parent_path();
+    if (!parent.empty())
+        std::filesystem::create_directories(parent, ec);
+    if (!writePng(path, flipped, w, h))
+    {
+        std::cout << "App::captureScreenshot: could not write " << path << std::endl;
+        return false;
+    }
+    std::cout << "Screenshot " << w << "x" << h << " -> " << path << std::endl;
+    return true;
 }
 
 void App::drawAppUI()
@@ -234,7 +434,10 @@ void App::drawMenuUI()
     ImGui::End();
 
     if (clicked >= 0)
+    {
+        handoffValues.clear(); // started from the menu: nothing handed over
         switchTo(clicked);
+    }
 }
 
 } // namespace engine

@@ -12,6 +12,7 @@ endif()
 project ("MathExplorer")
 
 option(BUILD_STANDALONE_SIMS "Build a standalone executable for each sim" ON)
+option(BUILD_MATH_TESTS "Build the std-only math module checks (tests/)" ON)
 
 # Vendored libraries that need a build target of our own.
 include(cmake/microtex.cmake)
@@ -20,6 +21,10 @@ include(cmake/microtex.cmake)
 add_subdirectory ("engine")
 add_subdirectory ("sims")
 add_subdirectory ("apps/explorer")
+if (BUILD_MATH_TESTS)
+  enable_testing()
+  add_subdirectory ("tests")
+endif()
 
 # Frozen learnOpenGL reference playground (kept building, never modified).
 add_subdirectory ("learnOpenGL")

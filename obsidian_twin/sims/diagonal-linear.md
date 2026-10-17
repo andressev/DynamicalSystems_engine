@@ -21,7 +21,8 @@ $E^s = \mathrm{span}\{e_i : \lambda_i < 0\}$, $E^u = \mathrm{span}\{e_i : \lambd
 $E^c = \mathrm{span}\{e_i : \lambda_i = 0\}$. A ball of seeds shows the flow acting on
 volumes: it stretches along $E^u$, collapses onto $E^u$ as the $E^s$ components decay,
 and its volume scales by $e^{(\lambda_1+\lambda_2+\lambda_3)t}$ (Liouville). A stripped-down
-sibling of [[vector-field]]: no parser, no 2D mode, no distance fade, no camera follow.
+sibling of [[vector-field]], which was later rebuilt in this sim's style (same labels,
+overlay and panel) for any typed field.
 
 ## How it works
 `init` builds the axes, a small dynamic subspace mesh, and the right-hand side
@@ -40,7 +41,7 @@ on $E^s$, away on $E^u$; $E^c$ is at rest and gets none. Each subspace also gets
 along its $+$ directions — on a line, its $+$ half; on a plane, the $(+,+)$ diagonal —
 drawn up-right of the anchor so it never covers the line, projected every frame (`labels`).
 
-Arrow glyphs are the [[vector-field]] construction (solid cone or barbs, LOD by count,
+Arrow glyphs are the [[vector-field]] construction, via [[ArrowGlyphs]] (solid cone or barbs, LOD by count,
 baked facet shading), sampled exactly on a cube of `domain radius`.
 
 Curves are one list of `Curve {traj, seed, color, kind}` with `Kind` one of `Ball`,
@@ -55,6 +56,14 @@ plane of the first two stable axes (in a 1D $E^s$: the two points $\pm r$). Sinc
 $A$ is diagonal, zero components stay zero, so these curves never leave $E^s$ and
 visibly contract to the origin.
 
+Every single also carries a red **tangent vector** $\dot{x} = Ax$ out of its head
+(`rebuildTangents()`, every frame, constant on-screen size: `length` × camera distance),
+labelled $\dot{x}$ just beyond its tip; when it points up on screen the $\phi^t$ label
+moves below the particle. `camera follows a single` makes the orbit camera track a
+single (newest, or `follow #`): `followCamera()` moves [[Camera]]'s `orbitCenter` and
+`position` together after the integration step, so it never lags; unticking returns to
+the saved centre. Same mechanism as [[vector-field]].
+
 **Settings persistence.** `settingsTable()` lists every tunable as key → pointer; `Save
 settings` writes it as `key value` lines to `sims/diagonal_linear/settings.txt`
 (absolute path via `SIMS_DIR`, so explorer and standalone share it) and `init` loads it
@@ -65,10 +74,15 @@ restores them at the end of `init` (NaN = never saved, keep the default framing)
 Curves are not saved. Explorer thumbnail: `docs/screenshots/diagonal_linear.png`.
 
 ## Modules attached
+- [[TrajectoryRunner]] — advances every curve (integrate on all cores, then upload) and
+  times integrate / upload / draw; readout under Other settings → Performance.
+- [[FlowKeys]] — arrow-key speed and direction.
 - [[Integrator]] — RK4 stepping of $\Lambda\mathbf{x}$, reverse time.
 - [[Trajectory]] — one per seed: state, trail polyline, `drawHead()` particle.
 - [[Shader]] — one program from files, shared by every draw.
-- [[Mesh]] — dynamic buffers for arrow shafts, cone heads and subspace geometry; static axes.
+- [[ArrowGlyphs]] — the glyph grid, the tangent arrows, and one head-only cone batch
+  per subspace kind (instanced; colored per batch).
+- [[Mesh]] — dynamic subspace geometry; static axes.
 - [[Shapes]] — axis lines.
 - [[LatexImage]] — top-right $\dot{x} = Ax$ overlay, written out as the live
   diagonal matrix times the column $(x_1, x_2, x_3)^T$, re-typeset only when a $\lambda_i$ changes (`show x' = Ax`); and
@@ -79,14 +93,16 @@ Curves are not saved. Explorer thumbnail: `docs/screenshots/diagonal_linear.png`
 
 ## The math
 - Flows, equilibria, glyph conventions: [[integral-curves]]. Stepping: [[runge-kutta]].
-- Click-to-drop is the same ray/plane unprojection as [[vector-field]] (plane through
-  `orbitCenter`, normal = camera forward).
+- Click-to-drop is the same ray/plane unprojection as [[vector-field]] (camera-facing
+  plane `click depth` of the way to `orbitCenter`).
 
 ## Controls / uniforms
+**Other settings → LaTeX**: `equation` ($\dot x = Ax$), `phi^t labels` (also $\dot x$), `E^s, E^u labels` sizes in px, saved.
 The panel is split into sections, each under a red `sectionHeader()` title: System,
 LaTeX overlays, Invariant subspaces, Flow, Ball of trajectories, Circle in
 $E^s$, Single trajectories, then a collapsed **Other settings** header (closed by default)
-holding Arrow field and Trails & particles, then Settings.
+holding Camera (`Reset camera`), Integrator (`method`, `max step h`, saved), Arrow field
+and Trails & particles, then Settings.
 **System**: $\lambda_1,\lambda_2,\lambda_3$ sliders, presets (sink, source, both saddles, a
 degenerate one with a center line), readout of $\dim E^s/E^u/E^c$, `show subspaces`,
 `axes`, `subspace extent`, `plane alpha`, `line width`, `flow arrows on subspaces`
@@ -94,10 +110,12 @@ degenerate one with a center line), readout of $\dim E^s/E^u/E^c$, `show subspac
 **Arrows**: `grid N`, `arrow scale`, head solid/barbs + `head length`/`head width`,
 `length by magnitude`, `hide below`, `domain radius`, `arrow alpha`, `alpha gradient`,
 auto/manual color scale.
-**Flow**: Play/Pause, `reverse`, `Restart` (all seeds back to start), `Clear all`,
-`speed`; ball `center`, `radius`, `particles`, `fill volume`, `Drop ball` (replaces the
-current ball), `Remove ball`; **click the view** for a single trajectory (seeded under the cursor on a camera-facing
-plane `click depth` of the way to the orbit center), `Clear singles`;
+**Flow**: Play/Pause (also **Space**, ignored while typing; arrow keys via [[FlowKeys]]), `reverse`, `Restart` (all seeds back to start), `Clear all`,
+`speed`; ball `center`, `radius`, `particles`, `fill volume`, `single at center` (also drops
+a green single at the ball's centre — labelled, followable, removed with the ball),
+`Drop ball` (replaces the current ball), `Remove ball`; **click the view** for a single trajectory (seeded under the cursor on a camera-facing
+plane `click depth` of the way to the orbit center), `tangent vector x'` + `length`,
+`Clear singles`, `camera follows a single` + `newest` / `follow #`;
 `circle radius`, `circle particles`, `Spawn circle in E^s` (replaces the previous one),
 `Remove circle`; `show trails`, `trail points`, `trail width`, `trail alpha`,
 `particle size`, `singles thickness`.

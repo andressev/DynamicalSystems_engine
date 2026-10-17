@@ -36,10 +36,15 @@ public:
     const std::vector<std::string>& sources() const { return srcs; }
 
     // out[0..dim-1] = f(x, t); `x` must hold dim values. Silent no-op while invalid.
+    // Thread-safe: concurrent calls on one field are fine (as long as nobody parse()s).
     void eval(const double* x, double t, double* out) const;
 
     // |f(x, t)|
     double magnitude(const double* x, double t) const;
+
+    // Each component typeset as LaTeX (Expression::latex over x, y[, z], t) — for a
+    // sim's on-screen x' = f(x). Empty while invalid.
+    std::vector<std::string> latex() const;
 
 private:
     int d = 0;
@@ -47,9 +52,6 @@ private:
     std::vector<Expression> comps;
     std::vector<std::string> vars;
     std::vector<std::string> srcs;
-    // eval() is const but needs a scratch value array; the engine is single
-    // threaded, so one buffer per field is enough.
-    mutable std::vector<double> scratch;
 };
 
 } // namespace engine

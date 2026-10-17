@@ -27,5 +27,12 @@ until a tile is clicked, and the Explorer panel's "menu" button destroys the act
 2. `registry.createByIndex(i)` — factory builds the new sim (no GL work in constructors).
 3. `sim.init(app)` — sim creates meshes/shaders, may keep the `App&` for window queries.
 
+**Sim-to-sim handoff** ([[0009-sim-handoff-requestswitch]]): a sim may call
+`App::requestSwitch(name, handoff)`; at the end of the frame App stores the handoff map
+and runs the same `switchTo`. The new sim reads `app.handoff()` in `init` (empty when it
+came from the menu or launch) and, if handed over, keeps the shared camera instead of
+framing its own view — that is what makes [[lorenz-flow]] → [[lorenz-equilibrium]] one
+continuous zoom.
+
 On shutdown, ~App resets the active sim **before** ImGui/context teardown, and [[Window]]
 is destroyed last (member declaration order).

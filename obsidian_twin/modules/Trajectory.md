@@ -39,16 +39,27 @@ from a UI callback — never in the sim's constructor.
    which is why one shader colors both.
 4. Camera follow is the caller's job. Orbiting the moving curve is one line —
    `camera.orbitCenter = traj->head()` — and riding it is a rig built from `head()` and
-   `velocity()` (see [[vector-field]]; it must also clear [[Camera]]'s `inputEnabled`).
-5. Reference sim: [[vector-field]].
+   `velocity()` (it must also clear [[Camera]]'s `inputEnabled`). [[vector-field]]
+   orbits a followed single (moving `position` with `orbitCenter` so it never lags).
+5. Reference sims: [[vector-field]], [[diagonal-linear]] — `time()` minus the seed
+   time is the $t$ in their $\phi^t(x_0)$ labels.
 
 Interface:
 - `advance(integrator, f, dt)` — `dt < 0` runs the flow backwards ([[Integrator]]).
+- `integrate(taylor, jet, dt, sampleStep)` — the same with [[TaylorIntegrator]]:
+  adaptive steps, the trail sampled from each step's polynomial at most `sampleStep`
+  apart, so it is as smooth as an RK trail at `maxStep = sampleStep`.
+- `integrate(integrator, f, dt)` + `flush()` — `advance` in two halves: `integrate`
+  steps and records points on the CPU only (no GL, safe on a worker thread, one per
+  curve), `flush` uploads everything written since the last flush (GL thread, before the
+  next draw). [[TrajectoryRunner]] runs `integrate` in parallel across curves; the trail
+  is identical either way.
 - `reset(seed, t0)` — back to a single point; keeps `dim` and the capacity.
 - `draw()`, `drawHead()`.
 - `head()`, `velocity()`, `speed()`, `time()`, `state()`, `dim()`, `size()`, `empty()`.
 - `drawFirst()` / `drawCount()` — the vertex range `draw()` issues, so a shader can turn
-  `gl_VertexID` into point age and fade the old end of the trail ([[vector-field]] does).
+  `gl_VertexID` into point age and fade the old end of the trail (unused since the
+  [[vector-field]] rebuild, still the way to do it).
 - `diverged()` — the curve left `kEscape` ($10^7$) or went non-finite.
 - `minSpacing` — points nearer than this to the previous one are not recorded.
 - `maxPoints()` / `setMaxPoints(n)` — trail length; resizing keeps the newest points.

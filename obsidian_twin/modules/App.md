@@ -30,6 +30,15 @@ Executables (not sims) construct it:
 Sims use the `App&` handed to `init`:
 - `window()`, `camera()` — window info and camera constraints, from `init`/`update`.
 - The active sim is driven as `activeSim->update(dt)` each frame.
+- `captureScreenshot(path, scale)` — from `update`, once state is current: re-renders the
+  active sim alone (no ImGui) into an offscreen 8x-MSAA FBO at `scale` × the framebuffer,
+  resolves and writes an RGB PNG. During it `renderScale()` returns `scale` (else 1);
+  multiply pixel-sized things (`glLineWidth`, point sizes) by it.
+- `requestSwitch(name, handoff)` — switch to another registered sim at the end of the
+  frame, handing it a `Handoff` (`std::map<std::string, double>`); the new sim reads
+  `handoff()` in `init` (empty from the menu). The [[Camera]] is left as it is. False
+  when `name` isn't registered; `hasSim(name)` asks first
+  ([[0009-sim-handoff-requestswitch]]; used by [[lorenz-flow]] ↔ [[lorenz-equilibrium]]).
 
 ## Notes
 - The sim picker is a centered menu of thumbnail tiles (`drawMenuUI`): images come from
@@ -39,4 +48,6 @@ Sims use the `App&` handed to `init`:
   so the sim's UI isn't destroyed mid-frame). Menu only exists when more than one sim is
   registered — the same App serves the explorer and standalone builds.
 - Camera keyboard input and ESC are suppressed while ImGui wants the keyboard.
+- Screenshot PNGs are written by a tiny encoder in `App.cpp` (stored deflate blocks, no
+  zlib/stb_image_write), so files are raw-sized (~11 MB at 2560×1440).
 - `~App` destroys the active sim before shutting down ImGui; Window (context) dies last.

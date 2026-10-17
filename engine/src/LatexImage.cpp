@@ -489,12 +489,13 @@ void LatexImage::draw() const
         ImGui::Image((ImTextureID)(intptr_t)textureId, ImVec2((float)w, (float)h));
 }
 
-void LatexImage::drawAt(float x, float y, float alpha) const
+void LatexImage::drawAt(float x, float y, float alpha, bool foreground) const
 {
     if (!textureId)
         return;
     ImU32 tint = IM_COL32(255, 255, 255, (int)(std::clamp(alpha, 0.0f, 1.0f) * 255.0f));
-    ImGui::GetBackgroundDrawList()->AddImage((ImTextureID)(intptr_t)textureId,
+    ImDrawList* list = foreground ? ImGui::GetForegroundDrawList() : ImGui::GetBackgroundDrawList();
+    list->AddImage((ImTextureID)(intptr_t)textureId,
                                              ImVec2(x, y), ImVec2(x + w, y + h),
                                              ImVec2(0, 0), ImVec2(1, 1), tint);
 }

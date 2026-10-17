@@ -53,13 +53,23 @@ core is the skeleton sims don't choose). New modules via the `/new-module` skill
 - [[Shader]] — GLSL program wrapper (file or in-memory sources)
 - [[Mesh]] — RAII VAO/VBO/EBO, static or dynamic; the future CUDA interop point
 - [[Shapes]] — procedural geometry generators
+- [[ArrowGlyphs]] — instanced arrow glyph batches (quiver, tangents, cones)
+- [[FlowKeys]] — shared arrow-key playback: Up/Down speed (to 0), Left/Right direction
+- [[ConjugacyMap]] — $\tilde h^{-1} = K_s + K_u$ per vertex in GLSL (deformed ball, $W^s$ patch)
 - [[Trajectory]] — one integral curve: ODE state + growing polyline on the GPU
+- [[TrajectoryRunner]] — advances a sim's trajectories (parallel integrate) and times integrate/upload/draw
+- [[FrameCopy]] — a texture copy of the frame so far, for effects that bend what is behind them
+- [[GpuTimer]] — GPU time of a stretch of draw calls (timer queries, never stalls)
 - [[LatexImage]] — LaTeX math typeset (MicroTeX) into a texture, drawn via ImGui
 
 ### math — pure computation, std-only
 - [[Expression]] — function parser: UI string → AST → CPU eval (complex + real) + GLSL codegen
 - [[VectorField]] — typed strings → a real field on R2/R3; the ODE right-hand side
 - [[Integrator]] — fixed-step Euler/RK2/RK4 over any right-hand side
+- [[TaylorIntegrator]] — high-order Taylor series method, adaptive steps, dense output (singles)
+- [[Eigen3]] — 3×3 eigenvalues/vectors (complex pairs), hyperbolicity, $E^s$/$E^u$ bases
+- [[InvariantManifold]] — parametrization method: Taylor map $K$ of $W^s$/$W^u$ at any equilibrium
+- [[LorenzSystem]] — the Lorenz field, its equilibria, Jacobian and quadratic part
 
 ### compute — CUDA interop (future, M4 in [[roadmap]])
 - (none yet)
@@ -68,8 +78,10 @@ core is the skeleton sims don't choose). New modules via the `/new-module` skill
 - [[riemann-sphere]] — domain coloring of complex polynomials on the Riemann sphere
 - [[surface-renderer-ray-marched]] — raymarched implicit surfaces f(x,y,z) = c, live c sweep
 - [[lorenz-manifold]] — geodesic rings of the Lorenz stable manifold, built from a Taylor-series patch
-- [[vector-field]] — typed vector fields on R2/R3: arrow glyphs + trajectories integrated live
+- [[vector-field]] — any typed field on R2/R3: glyphs, typeset $\dot{x} = f(x)$, balls of trajectories and $\phi^t(x_0)$-labelled singles; per-mode settings
 - [[diagonal-linear]] — $\dot x = \mathrm{diag}(\lambda)\,x$ in R3: stable/unstable subspaces + balls of trajectories
+- [[lorenz-flow]] — the global Lorenz flow: field, trajectories, equilibria to hover (linearization) and click (eased zoom → handoff)
+- [[lorenz-equilibrium]] — the flow inside a glass ball $V$ around one Lorenz equilibrium; where Hartman–Grobman stages A/B/C land
 
 ## Math
 Domain concepts as first-class notes (idea / equations / where implemented / pitfalls);
@@ -88,3 +100,5 @@ sims link to them instead of re-deriving. New concepts from `math/_template.md`.
 - [[0005-vault-as-ai-navigation]]
 - [[0006-cpu-field-sampling-dynamic-glyph-mesh]]
 - [[0007-latex-labels-microtex-imgui]]
+- [[0008-gpu-work-split-vertex-stage-and-cuda]]
+- [[0009-sim-handoff-requestswitch]]

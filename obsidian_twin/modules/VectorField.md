@@ -42,6 +42,8 @@ Interface:
 - `set(dim, components, error)` — `dim` is 2 or 3 and `components.size()` must match.
   Parses over `{"x","y","t"}` or `{"x","y","z","t"}`; all-or-nothing.
 - `eval(x, t, out)`, `magnitude(x, t)` — the field itself.
+- `latex()` — each component typeset via `Expression::latex` over its own variable
+  names, for an on-screen $\dot{\mathbf{x}} = f(\mathbf{x})$ ([[vector-field]]).
 - `dim()`, `valid()`, `variables()`, `sources()` — what it was built from.
 - `usesTime()` — true iff some component actually mentions $t$ (via
   `Expression::usesVariable`). Sims use it to decide whether a glyph grid has to be
@@ -52,8 +54,9 @@ Interface:
   constants keep only their real part (`i` reads as $0$) and the complex-only functions
   collapse to their real meaning (`conj`/`re` identity, `im` $=0$, `arg` $\in \{0,\pi\}$).
   A field typed with `i` in it is a user error the parser cannot catch.
-- `eval` is `const` but writes a `mutable` scratch vector, so **one field may not be
-  evaluated from two threads at once**. Fine today (single-threaded engine); a CUDA or
-  worker-thread user needs one field per thread, or a re-entrant overload.
+- **`eval` is thread-safe**: its value array is `thread_local` (one per thread,
+  reused, no per-call allocation), so one field can be sampled from many threads at once
+  — [[vector-field]] evaluates its glyph grid with `std::execution::par`. Only `parse`
+  must not run concurrently with evaluation.
 - Values are `double` all the way through; only the glyph/trail geometry narrows to
   `float` at the GPU boundary.

@@ -468,6 +468,158 @@ std::string glslNode(const Node& node, const std::vector<std::string>& glslVars)
     return "vec2(0.0, 0.0)";
 }
 
+// ---- LaTeX printer ----------------------------------------------------------
+
+// Binding strength of a printed node, for deciding where parentheses are needed:
+// sums 1, products 2, unary minus 3, powers 4, atoms (numbers, variables, calls,
+// fractions) 5. A negative constant prints with its sign, so it binds like a unary.
+int texPrec(const Node& node)
+{
+    switch (node.kind)
+    {
+    case Node::Kind::Constant:
+        return node.value.real() < 0.0 || node.value.imag() != 0.0 ? 3 : 5;
+    case Node::Kind::Variable:
+    case Node::Kind::Call:
+        return 5;
+    case Node::Kind::Unary:
+        return 3;
+    case Node::Kind::Binary:
+        switch (node.op)
+        {
+        case '+': case '-': return 1;
+        case '*':           return 2;
+        case '/':           return 5; // \frac{}{} is self-delimiting
+        case '^':           return 4;
+        }
+    }
+    return 5;
+}
+
+// Plain parentheses unless the inside is taller than a line of text (a fraction):
+// \left( \right) adds inner spacing that reads as "sin (x)".
+std::string texParen(const std::string& s)
+{
+    if (s.find("\\frac") != std::string::npos)
+        return "\\left(" + s + "\\right)";
+    return "(" + s + ")";
+}
+
+std::string texReal(double v)
+{
+    if (std::abs(v - kPi) < 1e-12) return "\\pi";
+    if (std::abs(v - 2.0 * kPi) < 1e-12) return "\\tau";
+    if (std::abs(v - 2.71828182845904523536) < 1e-12) return "e";
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "%.6g", v);
+    return buf;
+}
+
+// A sign is written {-}: a bare '-' at the start of a row or group is spaced as
+// subtraction ("- sin(x)"), a braced one hugs its operand.
+std::string texConstant(cd v)
+{
+    if (v.imag() == 0.0)
+        return v.real() < 0.0 ? "{-}" + texReal(-v.real()) : texReal(v.real());
+    if (v.real() == 0.0)
+        return v.imag() == 1.0 ? "i" : texReal(v.imag()) + "i";
+    return texParen(texReal(v.real()) + (v.imag() < 0.0 ? " - " : " + ") +
+                    texReal(std::abs(v.imag())) + "i");
+}
+
+std::string texNode(const Node& node, const std::vector<std::string>& vars);
+
+// `node` printed as an operand that must bind at least as tightly as `minPrec`.
+std::string texOperand(const Node& node, const std::vector<std::string>& vars, int minPrec)
+{
+    std::string s = texNode(node, vars);
+    return texPrec(node) < minPrec ? texParen(s) : s;
+}
+
+// Leftmost printed token is a digit: then a product needs an explicit \cdot, or
+// 2 * 3 would read as 23.
+bool texStartsWithNumber(const Node& node)
+{
+    switch (node.kind)
+    {
+    case Node::Kind::Constant:
+        return node.value.imag() == 0.0 && node.value.real() >= 0.0 &&
+               std::isdigit((unsigned char)texReal(node.value.real())[0]);
+    case Node::Kind::Binary:
+        return node.op != '/' && texPrec(*node.a) >= texPrec(node) &&
+               texStartsWithNumber(*node.a);
+    default:
+        return false;
+    }
+}
+
+std::string texNode(const Node& node, const std::vector<std::string>& vars)
+{
+    switch (node.kind)
+    {
+    case Node::Kind::Constant:
+        return texConstant(node.value);
+    case Node::Kind::Variable:
+        return vars.at(node.index);
+    case Node::Kind::Unary:
+        return "{-}" + texOperand(*node.a, vars, 4);
+    case Node::Kind::Call:
+    {
+        std::string arg = texNode(*node.a, vars);
+        const std::string name = kFuncs[node.index].name;
+        if (name == "exp")  return "e^{" + arg + "}";
+        if (name == "sqrt") return "\\sqrt{" + arg + "}";
+        if (name == "abs")  return "\\left|" + arg + "\\right|";
+        if (name == "conj") return "\\overline{" + arg + "}";
+        if (name == "log" || name == "ln") return "\\ln" + texParen(arg);
+        if (name == "re")   return "\\mathrm{Re}" + texParen(arg);
+        if (name == "im")   return "\\mathrm{Im}" + texParen(arg);
+        return "\\" + name + texParen(arg); // sin cos tan sinh cosh tanh arg
+    }
+    case Node::Kind::Binary:
+        switch (node.op)
+        {
+        case '+':
+            // a + (-b) reads as a - b
+            if (node.b->kind == Node::Kind::Unary)
+                return texNode(*node.a, vars) + " - " + texOperand(*node.b->a, vars, 2);
+            return texNode(*node.a, vars) + " + " + texOperand(*node.b, vars, 2);
+        case '-':
+            return texNode(*node.a, vars) + " - " + texOperand(*node.b, vars, 2);
+        case '*':
+        {
+            std::string lhs = texOperand(*node.a, vars, 2);
+            std::string rhs = texOperand(*node.b, vars, 4); // -x or -3 on the right: parens
+            if (texPrec(*node.b) >= 4 && texStartsWithNumber(*node.b))
+                return lhs + " \\cdot " + rhs;
+            // 2x and -0.3x read naturally; after a symbol or \pi a thin space keeps
+            // x\,y apart (and \pi\,x from becoming the unknown command \pix)
+            const Node* num = node.a.get();
+            if (num->kind == Node::Kind::Unary)
+                num = num->a.get();
+            if (num->kind == Node::Kind::Constant && texStartsWithNumber(*num))
+                return lhs + rhs;
+            if (rhs[0] == '(' || rhs.rfind("\\left(", 0) == 0)
+                return lhs + rhs; // x(28 - z): the parenthesis already separates
+
+            return lhs + "\\," + rhs;
+        }
+        case '/':
+            return "\\frac{" + texNode(*node.a, vars) + "}{" + texNode(*node.b, vars) + "}";
+        case '^':
+        {
+            // a call or fraction as the base still needs parentheses: sin(x)^2
+            std::string base = texNode(*node.a, vars);
+            if (texPrec(*node.a) < 5 || node.a->kind == Node::Kind::Call ||
+                (node.a->kind == Node::Kind::Binary && node.a->op == '/'))
+                base = texParen(base);
+            return base + "^{" + texNode(*node.b, vars) + "}";
+        }
+        }
+    }
+    return "0";
+}
+
 } // namespace
 
 // ---- Expression -------------------------------------------------------------
@@ -518,6 +670,11 @@ bool Expression::usesVariable(int index) const
 std::string Expression::glsl(const std::vector<std::string>& glslVars) const
 {
     return root ? glslNode(*root, glslVars) : "vec2(0.0, 0.0)";
+}
+
+std::string Expression::latex(const std::vector<std::string>& texVars) const
+{
+    return root ? texNode(*root, texVars) : "?";
 }
 
 const char* Expression::glslComplexLib()

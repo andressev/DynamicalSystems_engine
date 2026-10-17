@@ -2,19 +2,28 @@
 
 #include <engine/App.h>
 #include <engine/Camera.h>
+#include <engine/ConjugacyMap.h>
+#include <engine/InvariantManifold.h>
 #include <engine/Mesh.h>
 #include <engine/Shader.h>
+#include <engine/Shapes.h>
 
 #include <imgui.h>
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <execution>
+#include <fstream>
 #include <glm.hpp>
 #include <gtc/constants.hpp>
 #include <gtc/matrix_transform.hpp>
 #include <limits>
 #include <memory>
+#include <numeric>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -298,9 +307,9 @@ ShotResult shootPoint(const dvec3& r, const dvec3& rMinus, const dvec3& rPlus, d
     double s = 0.0, tau = std::max(tauInit, 1e-6);
     ShotResult res;
 
-    static int debugBudget = 0; // TEMP: dump the first few shots' Newton path
-    bool debug = debugBudget > 0;
-    if (debug) --debugBudget;
+    // TEMP: dump the first few shots' Newton path (atomic: shots run in parallel)
+    static std::atomic<int> debugBudget{ 0 };
+    bool debug = debugBudget.load(std::memory_order_relaxed) > 0 && debugBudget.fetch_sub(1) > 0;
 
     for (int iter = 0; iter < 25; ++iter) {
         dvec3 b;
@@ -374,10 +383,14 @@ double curvatureAngle(const dvec3& p, const dvec3& r, const dvec3& b)
 //  - if any shot fails, or any alpha_r fails the (alpha_max, Delta*alpha_max)
 //    pair, halve Delta and redo the whole ring;
 //  - once accepted, always grow Delta for the next level (see below).
-// tauHint is warm-started point-to-point within a ring and level-to-level.
+// Every shot only reads ring i, so the whole ring is shot in parallel, one task per
+// point. tauPerDelta[k] (in/out, index-aligned with prev) is the tau/Delta point k
+// converged to one level back -- its own history, so no ordering between points is
+// needed. Stored as a ratio because tau ~ Delta/|f| scales with Delta: the warm start
+// stays good across halvings and doublings.
 bool growLevel(const std::vector<RingSample>& prev, const std::vector<dvec3>& pPrev,
                double sigma, double rho, double beta,
-               double& Delta, const GrowthParams& gp, double& tauHint,
+               double& Delta, const GrowthParams& gp, std::vector<double>& tauPerDelta,
                std::vector<RingSample>& outRing)
 {
     const double alphaMax = gp.alphaMax;
@@ -385,32 +398,38 @@ bool growLevel(const std::vector<RingSample>& prev, const std::vector<dvec3>& pP
     if (n < 3)
         return false;
 
+    std::vector<size_t> pointIndex(n);
+    std::iota(pointIndex.begin(), pointIndex.end(), size_t(0));
+
     for (int halving = 0; halving <= GrowthParams::maxHalvings; ++halving) {
         std::vector<RingSample> candidate(n);
         std::vector<double> alphas(n);
-        double tau = tauHint;
-        bool allOk = true;
+        std::vector<double> candTau(n);
         bool atFloor = Delta <= gp.deltaMin; // Delta already clamped to the floor below
 
-        size_t failK = n;
-        for (size_t k = 0; k < n; ++k) {
+        // n = no failure; otherwise some failing k (the whole ring is redone anyway,
+        // so the other tasks bail out as soon as one shot fails)
+        std::atomic<size_t> failK{ n };
+        std::for_each(std::execution::par, pointIndex.begin(), pointIndex.end(), [&](size_t k) {
+            if (failK.load(std::memory_order_relaxed) < n)
+                return;
             const dvec3& r = prev[k].pt;
             const dvec3& rMinus = prev[(k + n - 1) % n].pt;
             const dvec3& rPlus = prev[(k + 1) % n].pt;
-            ShotResult sr = shootPoint(r, rMinus, rPlus, Delta, sigma, rho, beta, tau);
+            ShotResult sr = shootPoint(r, rMinus, rPlus, Delta, sigma, rho, beta,
+                                       tauPerDelta[k] * Delta);
             if (!sr.ok) {
-                allOk = false;
-                failK = k;
-                break;
+                failK.store(k, std::memory_order_relaxed);
+                return;
             }
-            tau = sr.tau;
+            candTau[k] = sr.tau / Delta;
             alphas[k] = curvatureAngle(pPrev[k], r, sr.b);
             candidate[k] = { prev[k].psi, sr.b };
-        }
+        });
 
-        if (!allOk) {
+        if (failK.load() < n) {
             fprintf(stderr, "[growLevel] halving=%d Delta=%.6f: shootPoint FAILED at k=%zu\n",
-                    halving, Delta, failK);
+                    halving, Delta, failK.load());
             if (atFloor)
                 return false; // can't even shoot at the floor Delta -- nothing to fall back to
             Delta = std::max(Delta * 0.5, gp.deltaMin);
@@ -442,7 +461,7 @@ bool growLevel(const std::vector<RingSample>& prev, const std::vector<dvec3>& pP
         // doubling when alphaMin/dAlphaMin also clear -- let the halving loop
         // above pull Delta back down again next level if it was too greedy.
         outRing = std::move(candidate);
-        tauHint = tau;
+        tauPerDelta = std::move(candTau);
 
         Delta = std::min(Delta * 2.0, gp.deltaMax);
         return true;
@@ -458,8 +477,9 @@ void growManifold(Manifold& man, const Params& params, const GrowthParams& gp)
         return;
 
     double Delta = glm::clamp(gp.deltaInit, gp.deltaMin, gp.deltaMax);
-    double tauHint = gp.tauInit;
     std::vector<RingSample> current = man.rings.back();
+    // per-point warm start as tau/Delta; tauInit is the guess at deltaInit
+    std::vector<double> tauPerDelta(current.size(), gp.tauInit / std::max(gp.deltaInit, 1e-12));
 
     // Predecessor positions for level 0 (p_r for each r in the last Taylor
     // ring): evaluated exactly through K at the same psi, one ring further
@@ -474,9 +494,10 @@ void growManifold(Manifold& man, const Params& params, const GrowthParams& gp)
     for (int lvl = 0; lvl < gp.levels; ++lvl) {
         std::vector<RingSample> next;
         bool ok = growLevel(current, pPrev, params.sigma, params.rho, params.beta, Delta, gp,
-                             tauHint, next);
-        fprintf(stderr, "[growth] level %d: %s Delta=%.6f tauHint=%.6f\n",
-                lvl, ok ? "accepted" : "FAILED", Delta, tauHint);
+                             tauPerDelta, next);
+        fprintf(stderr, "[growth] level %d: %s Delta=%.6f max tau/Delta=%.6f\n",
+                lvl, ok ? "accepted" : "FAILED", Delta,
+                *std::max_element(tauPerDelta.begin(), tauPerDelta.end()));
         fflush(stderr);
         if (!ok)
             break;
@@ -546,10 +567,12 @@ Manifold buildManifold(const Params& params, const GrowthParams& gp)
         }
     }
 
+    // Each Taylor ring only reads the (finished) coefficients, so the rings are built
+    // in parallel, one task per ring; z-range is a serial pass afterwards.
     man.rings.resize(params.N);
-    man.zMin = std::numeric_limits<double>::max();
-    man.zMax = std::numeric_limits<double>::lowest();
-    for (int i = 1; i <= params.N; ++i) {
+    std::vector<int> ringIndex(params.N);
+    std::iota(ringIndex.begin(), ringIndex.end(), 1);
+    std::for_each(std::execution::par, ringIndex.begin(), ringIndex.end(), [&](int i) {
         double rho_i = i * params.dRho;
 
         std::vector<RingSample> samples = params.equalArc
@@ -560,18 +583,41 @@ Manifold buildManifold(const Params& params, const GrowthParams& gp)
             samples = refineRingSpacing(man.p, params.order, rho_i, man.s2, std::move(samples),
                                         params.maxGap, Params::maxPointsPerRing);
 
-        for (const RingSample& s : samples) {
+        man.rings[i - 1] = std::move(samples);
+    });
+
+    man.zMin = std::numeric_limits<double>::max();
+    man.zMax = std::numeric_limits<double>::lowest();
+    for (const auto& ring : man.rings)
+        for (const RingSample& s : ring) {
             man.zMin = std::min(man.zMin, s.pt.z);
             man.zMax = std::max(man.zMax, s.pt.z);
         }
-        man.rings[i - 1] = std::move(samples);
-    }
     if (man.zMax <= man.zMin)
         man.zMax = man.zMin + 1.0;
 
     growManifold(man, params, gp);
 
     return man;
+}
+
+// A shader file with the line containing `marker` replaced by `insert` (how the
+// ConjugacyMap GLSL gets spliced into this sim's vertex shader).
+std::string loadWithInsert(const char* path, const char* marker, const std::string& insert)
+{
+    std::ifstream in(path);
+    std::stringstream ss;
+    ss << in.rdbuf();
+    std::string src = ss.str();
+    size_t at = *marker ? src.find(marker) : std::string::npos;
+    if (at != std::string::npos) {
+        size_t lineStart = src.rfind('\n', at);
+        size_t lineEnd = src.find('\n', at);
+        lineStart = lineStart == std::string::npos ? 0 : lineStart + 1;
+        src.replace(lineStart, (lineEnd == std::string::npos ? src.size() : lineEnd) - lineStart,
+                    insert);
+    }
+    return src;
 }
 
 // Red (nearest the origin, t=0) -> blue (the furthest-out geodesic ring, t=1).
@@ -623,6 +669,14 @@ public:
             SIMS_DIR "lorenz_manifold/shaders/vertex.glsl",
             SIMS_DIR "lorenz_manifold/shaders/fragment.glsl");
 
+        hmShader = engine::Shader::fromSources(
+            loadWithInsert(SIMS_DIR "lorenz_manifold/shaders/conjugacy_vertex.glsl",
+                           "@CONJUGACY_MAP", engine::ConjugacyMap::glsl()),
+            loadWithInsert(SIMS_DIR "lorenz_manifold/shaders/conjugacy_fragment.glsl", "", ""));
+        hmShader.bindUniformBlock(engine::ConjugacyMap::kBlockName,
+                                  engine::ConjugacyMap::kBinding);
+        buildPreviewMeshes();
+
         rebuild();
     }
 
@@ -651,6 +705,9 @@ public:
             for (auto& ring : ringMeshes)
                 ring->draw(GL_LINE_LOOP);
         }
+
+        if ((showHmDisk || showHmBall) && hm.valid())
+            renderConjugacyPreview(camera, model, view, projection);
     }
 
     void drawUI() override
@@ -727,8 +784,11 @@ public:
         if (colorDirty && !dirty)
             rebuildMeshes();
 
+        ImGui::TextDisabled("last rebuild %.1f ms", rebuildMs);
         if (!buildError.empty())
             ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", buildError.c_str());
+
+        drawConjugacyUI();
 
         ImGui::TextWrapped(
             "Rings C_i are approximate geodesic circles of W^s(0) at radius "
@@ -739,6 +799,120 @@ public:
     }
 
 private:
+    // ---- conjugacy preview: h~^{-1} = K_s + K_u evaluated per vertex on the GPU ---------
+    // A try-out of engine::ConjugacyMap at the origin before the Lorenz equilibrium sim
+    // exists (Hartman-Grobman track, roadmap). The E^s disk pushed through h~^{-1} on the
+    // GPU must lie exactly on this sim's CPU-built surface — a visual check of the GLSL.
+
+    void rebuildConjugacy()
+    {
+        hmError.clear();
+        double A[3][3] = {
+            { -params.sigma, params.sigma, 0.0 },
+            { params.rho, -1.0, 0.0 },
+            { 0.0, 0.0, -params.beta },
+        };
+        engine::InvariantManifold::Quadratic Q{};
+        Q[1][0][2] = -1.0;   // y' gets -u_x u_z
+        Q[2][0][1] = 1.0;    // z' gets  u_x u_y
+        int order = std::min(params.order, engine::ConjugacyMap::kMaxOrder);
+        engine::InvariantManifold ws, wu;
+        bool ok = ws.build(A, Q, engine::InvariantManifold::Side::Stable, order)
+               && wu.build(A, Q, engine::InvariantManifold::Side::Unstable, order)
+               && hm.set(ws, wu);
+        if (!ok)
+            hmError = !ws.valid() ? ws.error() : !wu.valid() ? wu.error() : hm.error();
+    }
+
+    void buildPreviewMeshes()
+    {
+        // unit sphere (positions only are read) and a unit disk as rings + spokes
+        sphereMesh = std::make_unique<engine::Mesh>(engine::Shapes::sphereVertices(96, 64, 1.0f),
+                                                    engine::Shapes::sphereIndices(96, 64),
+                                                    std::vector<int>{ 3, 3, 2 });
+        std::vector<float> disk;
+        const int rings = 10, spokes = 24, segs = 160;
+        for (int i = 1; i <= rings; ++i) {
+            float r = (float)i / rings;
+            for (int k = 0; k < segs; ++k)
+                for (int e = 0; e < 2; ++e) {
+                    float a = 2.0f * glm::pi<float>() * (float)(k + e) / segs;
+                    disk.insert(disk.end(), { r * std::cos(a), r * std::sin(a), 0.0f });
+                }
+        }
+        for (int k = 0; k < spokes; ++k) {
+            float a = 2.0f * glm::pi<float>() * (float)k / spokes;
+            for (int j = 0; j < 20; ++j)
+                for (int e = 0; e < 2; ++e) {
+                    float r = (float)(j + e) / 20.0f;
+                    disk.insert(disk.end(), { r * std::cos(a), r * std::sin(a), 0.0f });
+                }
+        }
+        std::vector<unsigned int> idx(disk.size() / 3);
+        std::iota(idx.begin(), idx.end(), 0u);
+        diskMesh = std::make_unique<engine::Mesh>(disk, idx, std::vector<int>{ 3 });
+    }
+
+    void renderConjugacyPreview(const engine::Camera& camera, const glm::mat4& model,
+                                const glm::mat4& view, const glm::mat4& projection)
+    {
+        hm.bind();
+        hmShader.use();
+        hmShader.setMat4("model", model);
+        hmShader.setMat4("view", view);
+        hmShader.setMat4("projection", projection);
+        hmShader.setVec3("u_center", glm::vec3(0.0f));   // x* = origin
+        hmShader.setFloat("u_radius", hmRadius);
+        hmShader.setVec3("u_eye", camera.position);
+        auto e0 = hm.stable().orthoBasis(0), e1 = hm.stable().orthoBasis(1);
+        hmShader.setVec3("u_e0", glm::vec3((float)e0[0], (float)e0[1], (float)e0[2]));
+        hmShader.setVec3("u_e1", glm::vec3((float)e1[0], (float)e1[1], (float)e1[2]));
+
+        if (showHmDisk && hm.stable().dim() == 2) {
+            hmShader.setInt("u_mode", 1);
+            hmShader.setVec3("u_color", glm::vec3(1.0f));
+            hmShader.setFloat("u_alpha", 0.9f);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glLineWidth(1.5f);
+            diskMesh->draw(GL_LINES);
+            glLineWidth(1.0f);
+        }
+        if (showHmBall) {
+            hmShader.setInt("u_mode", 0);
+            hmShader.setVec3("u_color", glm::vec3(0.55f, 0.75f, 1.0f));
+            hmShader.setFloat("u_alpha", hmAlpha);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glDepthMask(GL_FALSE);
+            sphereMesh->draw(GL_TRIANGLES);
+            glDepthMask(GL_TRUE);
+        }
+        glDisable(GL_BLEND);
+        shader.use();
+    }
+
+    void drawConjugacyUI()
+    {
+        ImGui::Separator();
+        if (!ImGui::CollapsingHeader("Conjugacy preview (h^-1 on the GPU)"))
+            return;
+        ImGui::Checkbox("deformed ball V = h^-1(B_r)", &showHmBall);
+        ImGui::Checkbox("E^s disk through h^-1 (must lie on the surface)", &showHmDisk);
+        ImGui::SliderFloat("r##hm", &hmRadius, 0.1f, 12.0f, "%.2f");
+        ImGui::SliderFloat("glass alpha", &hmAlpha, 0.0f, 0.6f);
+        if (!hmError.empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", hmError.c_str());
+            return;
+        }
+        // how far the Taylor maps can be trusted at this r (relative invariance defect)
+        ImGui::TextDisabled("defect at r: W^s %.1e, W^u %.1e   (min small divisor %.3f)",
+                            hm.stable().maxRelDefect(hmRadius), hm.unstable().maxRelDefect(hmRadius),
+                            std::min(hm.stable().minDivisor(), hm.unstable().minDivisor()));
+        ImGui::TextWrapped("Exact on E^s and E^u (K_s, K_u); an interpolation in between. "
+                           "Moving r costs nothing: only a uniform changes.");
+    }
+
     void rebuild()
     {
         buildError.clear();
@@ -747,11 +921,15 @@ private:
             return;
         }
 
+        auto t0 = std::chrono::steady_clock::now();
         cachedManifold = buildManifold(params, growth);
+        rebuildConjugacy();
         lastTaylorRingCount = cachedManifold.taylorRingCount;
         lastDelta = cachedManifold.lastDelta;
 
         rebuildMeshes();
+        rebuildMs = std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - t0).count();
     }
 
     // Re-bakes vertex colors (gradient scale / banding / height) and rebuilds
@@ -765,23 +943,25 @@ private:
         // Flat buffer of every ring vertex (pos + level color + height color),
         // shared by the points mesh, the per-ring line loops, and (with one
         // extra origin vertex appended below) the solid surface.
-        std::vector<float> verts;
+        // Offsets first (prefix sum over ring sizes), then every ring fills its own
+        // slice of the buffer in parallel; the GL uploads below stay on this thread.
         std::vector<unsigned int> ringVertStart(ringCount);
         unsigned int vcount = 0;
-
-        ringMeshes.clear();
-        ringMeshes.reserve(ringCount);
-
         for (size_t i = 0; i < ringCount; ++i) {
             ringVertStart[i] = vcount;
-            const auto& ring = man.rings[i];
+            vcount += (unsigned int)man.rings[i].size();
+        }
+        std::vector<float> verts((size_t)vcount * 9);
+
+        std::vector<size_t> ringIndex(ringCount);
+        std::iota(ringIndex.begin(), ringIndex.end(), size_t(0));
+        std::for_each(std::execution::par, ringIndex.begin(), ringIndex.end(), [&](size_t i) {
             glm::vec3 levelColor = gradient(double(i) / std::max<size_t>(1, ringCount - 1),
                                             gradientScale);
             levelColor = applyBanding(levelColor, i, bandColors, bandContrast);
 
-            std::vector<float> ringVerts;
-            ringVerts.reserve(ring.size() * 9);
-            for (const RingSample& s : ring) {
+            float* out = verts.data() + (size_t)ringVertStart[i] * 9;
+            for (const RingSample& s : man.rings[i]) {
                 glm::vec3 pos(s.pt);
                 glm::vec3 heightColor = gradient((s.pt.z - man.zMin) / (man.zMax - man.zMin),
                                                  gradientScale);
@@ -789,16 +969,18 @@ private:
 
                 for (float f : { pos.x, pos.y, pos.z,
                                  levelColor.r, levelColor.g, levelColor.b,
-                                 heightColor.r, heightColor.g, heightColor.b }) {
-                    verts.push_back(f);
-                    ringVerts.push_back(f);
-                }
-                ++vcount;
+                                 heightColor.r, heightColor.g, heightColor.b })
+                    *out++ = f;
             }
+        });
 
-            std::vector<unsigned int> ringIdx(ring.size());
-            for (unsigned int k = 0; k < ringIdx.size(); ++k)
-                ringIdx[k] = k;
+        ringMeshes.clear();
+        ringMeshes.reserve(ringCount);
+        for (size_t i = 0; i < ringCount; ++i) {
+            auto first = verts.begin() + (size_t)ringVertStart[i] * 9;
+            std::vector<float> ringVerts(first, first + man.rings[i].size() * 9);
+            std::vector<unsigned int> ringIdx(man.rings[i].size());
+            std::iota(ringIdx.begin(), ringIdx.end(), 0u);
             ringMeshes.push_back(std::make_unique<engine::Mesh>(
                 ringVerts, ringIdx, std::vector<int>{ 3, 3, 3 }));
         }
@@ -842,11 +1024,18 @@ private:
             }
         }
 
-        for (size_t i = 0; i + 1 < ringCount; ++i) {
+        // The strips between ring pairs are independent: each pair is stitched in
+        // parallel into its own index list, then they are joined in ring order.
+        std::vector<std::vector<unsigned int>> strips(ringCount - 1);
+        std::vector<size_t> pairIndex(ringCount - 1);
+        std::iota(pairIndex.begin(), pairIndex.end(), size_t(0));
+        std::for_each(std::execution::par, pairIndex.begin(), pairIndex.end(), [&](size_t i) {
             const auto& A = man.rings[i];
             const auto& B = man.rings[i + 1];
             unsigned int baseA = ringVertStart[i], baseB = ringVertStart[i + 1];
             size_t nA = A.size(), nB = B.size();
+            std::vector<unsigned int>& strip = strips[i];
+            strip.reserve((nA + nB) * 3);
             size_t ia = 0, ib = 0;
             while (ia < nA || ib < nB) {
                 double psiANext = (ia + 1 < nA) ? A[ia + 1].psi : A[0].psi + 2.0 * glm::pi<double>();
@@ -857,15 +1046,17 @@ private:
                 unsigned int b0 = baseB + (unsigned)(ib % nB);
                 if (advanceA) {
                     unsigned int a1 = baseA + (unsigned)((ia + 1) % nA);
-                    surfIdx.push_back(a0); surfIdx.push_back(a1); surfIdx.push_back(b0);
+                    strip.insert(strip.end(), { a0, a1, b0 });
                     ++ia;
                 } else {
                     unsigned int b1 = baseB + (unsigned)((ib + 1) % nB);
-                    surfIdx.push_back(a0); surfIdx.push_back(b1); surfIdx.push_back(b0);
+                    strip.insert(strip.end(), { a0, b1, b0 });
                     ++ib;
                 }
             }
-        }
+        });
+        for (const auto& strip : strips)
+            surfIdx.insert(surfIdx.end(), strip.begin(), strip.end());
 
         surfaceMesh = std::make_unique<engine::Mesh>(verts, surfIdx, std::vector<int>{ 3, 3, 3 });
     }
@@ -882,12 +1073,23 @@ private:
     std::string buildError;
     int lastTaylorRingCount = 0;
     double lastDelta = 0.0;
+    double rebuildMs = 0.0;   // wall time of the last full rebuild (K, rings, growth, meshes)
 
     float modelScale = 1.0f;
     bool showSurface = true;
     bool showPoints = true;
     bool showRings = true;
     bool colorByHeight = false;
+
+    engine::Shader hmShader;           // conjugacy preview (ConjugacyMap GLSL spliced in)
+    engine::ConjugacyMap hm;
+    std::unique_ptr<engine::Mesh> sphereMesh;
+    std::unique_ptr<engine::Mesh> diskMesh;
+    std::string hmError;
+    bool showHmBall = false;
+    bool showHmDisk = false;
+    float hmRadius = 3.0f;
+    float hmAlpha = 0.08f;
 
     float gradientScale = 1.0f;  // 1.0 = full red->blue across the whole range
     bool bandColors = true;

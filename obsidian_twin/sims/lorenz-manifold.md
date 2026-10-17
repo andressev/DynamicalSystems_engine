@@ -3,6 +3,8 @@ type: sim
 status: wip
 code:
   - sims/lorenz_manifold/LorenzManifoldSim.cpp
+  - sims/lorenz_manifold/shaders/conjugacy_vertex.glsl
+  - sims/lorenz_manifold/shaders/conjugacy_fragment.glsl
 ---
 # lorenz-manifold
 
@@ -44,11 +46,32 @@ even when `adaptive spacing` gives them different point counts, unlike a naive
 equal-index quad grid. A fan from an explicit origin vertex (`K(0,0) = 0` exactly) to
 the innermost ring closes the tip.
 
+**Parallel rebuild** (`std::for_each(std::execution::par, …)` throughout; the UI shows
+"last rebuild … ms"):
+- Taylor rings: each ring only reads the finished coefficients, one task per ring
+  (equal-arc + adaptive refinement included); the $z$ range is a serial pass after.
+- Phase 2 shooting: one task per point of the ring being grown. Levels stay serial
+  (ring $i+1$ needs ring $i$). The $\tau$ warm start is per point and stored as
+  $\tau/\Delta$ — the point's own value one level back — instead of chained from the
+  previous point; the ratio keeps the guess right across $\Delta$ halvings/doublings.
+  Same accepted levels as the old serial chain.
+- Mesh assembly: per-ring vertex slices and per-ring-pair surface strips in parallel;
+  GL uploads stay on the main thread.
+
+**Conjugacy preview** (collapsed section, off by default): a try-out of [[ConjugacyMap]]
+at the origin — the glass ball $V = \tilde h^{-1}(B_r(0))$ and a unit disk in $E^s$
+pushed through $\tilde h^{-1}$ on the GPU (white lines). The disk is the GPU's $W^s$
+patch, so it must lie *on* this sim's CPU-built surface: a visual check of the GLSL
+against the CPU recursion. Shows `maxRelDefect(r)` for both sides. Moves to the Lorenz
+equilibrium sim at stage C.
+
 ## Modules attached
 - [[Mesh]] — one points mesh (all rings flattened), one line-loop mesh per ring, and
   one solid-surface triangle mesh; all rebuilt (not updated) whenever a build
   parameter changes.
 - [[Shader]] — one small point/line shader pair, loaded once from files.
+- [[InvariantManifold]] + [[ConjugacyMap]] — the conjugacy preview (own shader pair
+  with the ConjugacyMap GLSL spliced in; unit sphere from [[Shapes]]).
 - [[Camera]] — orbit camera; `init` sets `orbitRadius`/`orbitRadiusMin` to frame the
   manifold near the origin.
 

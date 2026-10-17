@@ -32,9 +32,11 @@ public:
     void draw() const;
 
     // Same image with its top-left at screen point (x, y) in ImGui display pixels, on
-    // the background draw list: over the 3D scene, under every ImGui window. For labels
-    // that follow something in the world — project it first (Camera matrices).
-    void drawAt(float x, float y, float alpha = 1.0f) const;
+    // the background draw list: over the 3D scene, under every ImGui window — or, with
+    // foreground = true, over the windows too (a title that must never be hidden by a
+    // panel). For labels that follow something in the world — project it first (Camera
+    // matrices).
+    void drawAt(float x, float y, float alpha = 1.0f, bool foreground = false) const;
 
     bool empty() const { return textureId == 0; }
     unsigned texture() const { return textureId; }

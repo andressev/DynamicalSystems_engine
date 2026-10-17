@@ -45,7 +45,17 @@ Attach = hold a `std::unique_ptr<engine::Mesh>` member, create in `init`:
 4. Reference users: [[Trajectory]] (one vertex appended per integration step), and
    `rebuildArrows()` in [[vector-field]] (whole buffer rewritten per rebuild).
 
-Also: `indexCount()`, `vertexCapacity()`, `vbo()` (the CUDA interop point).
+**Instanced drawing** (either flavor):
+1. `setInstanceLayout(instanceCapacity, layout)` — adds a dynamic per-instance buffer
+   whose attributes take the locations *after* the vertex layout's, with divisor 1.
+   Calling it again replaces (and can grow) the buffer.
+2. `setInstances(data, floatCount)` — write the records (over-capacity writes dropped).
+3. `drawInstanced(mode, instanceCount, vertexCount = -1)` — indexed when the mesh has
+   indices, else over `vertexCount` vertices.
+4. Reference user: [[ArrowGlyphs]] (one static cone/shaft shape, one record per arrow).
+
+Also: `indexCount()`, `vertexCapacity()`, `instanceCapacity()`, `vbo()` (the CUDA
+interop point).
 
 ## Notes
 - No raw `glGen*`/`glDelete*` in sims — GL buffer ownership lives here and in [[Shader]]
@@ -54,4 +64,8 @@ Also: `indexCount()`, `vertexCapacity()`, `vbo()` (the CUDA interop point).
   `glDrawElements`) must not be used on it, and `setVertices`/`drawArrays` are
   meaningless on a static one (`capacity` is 0, so `setVertices` silently does nothing).
 - Attribute layout is fixed at construction for both flavors; changing it means a new
-  `Mesh`.
+  `Mesh`. The instance layout is the exception — `setInstanceLayout` may be re-called.
+- One instance buffer per mesh: two base meshes drawing the same instances (shafts and
+  heads in [[ArrowGlyphs]]) each upload their own copy — a few bytes per instance.
+- No base-instance draws: the context is GL 3.3, so drawing a sub-range of instances
+  means a separate batch (what [[diagonal-linear]] does per subspace).

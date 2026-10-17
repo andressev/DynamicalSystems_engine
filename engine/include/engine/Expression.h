@@ -49,6 +49,13 @@ public:
     // the helpers from glslComplexLib(), which must be present in the shader.
     std::string glsl(const std::vector<std::string>& glslVars) const;
 
+    // Typeset the expression as LaTeX math (for MicroTeX / LatexImage): texVars[i]
+    // stands for variables[i]. Division becomes \frac, powers superscripts, products
+    // juxtapose (2x, x\,y, with \cdot before a number), function calls get \sin etc.,
+    // and constants equal to pi / tau / e print as their symbols. Parentheses only
+    // where precedence needs them.
+    std::string latex(const std::vector<std::string>& texVars) const;
+
     // Source of the complex-arithmetic helper functions (cMul, cExp, cPowi, ...)
     // that glsl() output depends on; sims splice this into their shader templates.
     static const char* glslComplexLib();
