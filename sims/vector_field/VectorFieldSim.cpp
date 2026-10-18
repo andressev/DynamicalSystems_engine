@@ -52,7 +52,8 @@ const Preset kPresets2D[] = {
 const Preset kPresets3D[] = {
     {"Lorenz",             {"10(y - x)", "x(28 - z) - y", "x y - 2.6667z"}},
     {"Rossler",            {"-y - z", "x + 0.2y", "0.2 + z(x - 5.7)"}},
-    {"Thomas",             {"sin(y) - 0.19x", "sin(z) - 0.19y", "sin(x) - 0.19z"}},
+    // Thomas' field is slow (|f| ~ 1): times 10 so it runs at the pace of the others
+    {"Thomas",             {"10(sin(y) - 0.19x)", "10(sin(z) - 0.19y)", "10(sin(x) - 0.19z)"}},
     {"rigid rotation",     {"-y", "x", "0.3"}},
     {"3D saddle",          {"x", "y", "-2z"}},
 };

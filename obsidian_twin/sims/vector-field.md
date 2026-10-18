@@ -21,7 +21,8 @@ field (glyphs, direction by orientation, $|f|$ by color) and the *integrated* fi
 a ball (in R2 a disk) of seeds deforming under the flow, and single trajectories, each
 labelled $\phi^t(x_0)$ with $x_0$ written out. R2 is the phase plane (saddle, center,
 spiral sink, van der Pol, damped pendulum, a time-dependent field); R3 the strange
-attractors (Lorenz, Rössler, Thomas) — a ball dropped into Lorenz traces the attractor.
+attractors (Lorenz, Rössler, Thomas — the latter's field times 10, so it runs at the
+others' pace) — a ball dropped into Lorenz traces the attractor.
 
 Rebuilt (2026-10-11) in the style of [[diagonal-linear]]: same labels, overlay, seeding
 and panel layout, minus that sim's linear-algebra extras (no $E^s$/$E^u$ — a general
