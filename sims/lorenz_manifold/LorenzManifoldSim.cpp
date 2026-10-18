@@ -710,6 +710,13 @@ public:
             renderConjugacyPreview(camera, model, view, projection);
     }
 
+    // Hold 1 (App::kRecenterHoldSeconds): glide back to the view init() framed.
+    void recenterCamera() override
+    {
+        app->camera().easeOrbitTo(glm::vec3(0.0f), 14.0f, 0.0f, 1.57079633f,
+                                  engine::App::kRecenterEaseSeconds);
+    }
+
     void drawUI() override
     {
         bool dirty = false;

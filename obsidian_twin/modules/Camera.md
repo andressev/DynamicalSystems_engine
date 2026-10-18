@@ -53,6 +53,13 @@ Knobs:
   scales down proportionally (10% floor). [[riemann-sphere]] uses them to keep the
   camera outside the sphere and slow it near the surface.
 
+- `easeOrbitTo(center, radius, theta, phi, seconds)` — glide the orbit view to a target
+  instead of snapping: smootherstep, radius in log space, $\theta$ the shortest way
+  round. [[App]] calls `updateEase(dt)` every frame before `processInput` (it also places
+  `position`/`front` so the glide shows even while ImGui has the keyboard); any orbit
+  key press cancels it (`cancelEase`), `easing()` says whether one is running. Every
+  sim's `recenterCamera()` (hold **1**) uses it with `App::kRecenterEaseSeconds`.
+
 ## Notes
 - Both orbit rates are damped together by `orbitSlowZone`, so close-up inspection slows
   rotation and zoom by the same factor.

@@ -1,4 +1,5 @@
 #include <engine/App.h>
+#include <engine/FlowKeys.h>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -180,15 +181,35 @@ int App::run(const std::string& startSim)
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
+        cam.updateEase(dt); // a recenter glide in progress, before input and the sim
+
         ImGuiIO& io = ImGui::GetIO();
         if (!io.WantCaptureKeyboard)
         {
             if (glfwGetKey(win.handle(), GLFW_KEY_ESCAPE) == GLFW_PRESS)
                 win.requestClose();
+            // F11: borderless full screen on / off (the maximize button enters it too)
+            if (ImGui::IsKeyPressed(ImGuiKey_F11, false))
+                win.toggleFullscreen();
             if (activeSim)
+            {
                 cam.processInput(win.handle(), dt);
+                // H hides/shows the controls panel in every sim (HUD overlays stay)
+                if (ImGui::IsKeyPressed(ImGuiKey_H, false))
+                {
+                    showControls = !showControls;
+                    controlsAuto = false;
+                }
+                // 1 held past kRecenterHoldSeconds: the sim's home view (a tap is the
+                // sim's own: follow toggle)
+                for (int key : {(int)ImGuiKey_1, (int)ImGuiKey_Keypad1})
+                    if (FlowKeys::tapHold(key, dt, kRecenterHoldSeconds).held)
+                        activeSim->recenterCamera();
+            }
         }
         cam.aspect = win.aspect();
+        if (activeSim)
+            updateAutoPanel(dt);
 
         if (activeSim)
             activeSim->update(dt);
@@ -199,7 +220,8 @@ int App::run(const std::string& startSim)
         if (activeSim)
         {
             activeSim->render(cam);
-            drawAppUI();
+            if (showControls)
+                drawAppUI();
         }
         else
         {
@@ -332,11 +354,56 @@ bool App::captureScreenshot(const std::string& path, int scale)
     return true;
 }
 
+// The hidden panel pulls in when the mouse reaches the top-left corner and goes again
+// once the mouse has been off it for kPanelLeaveSeconds or still for kPanelIdleSeconds.
+// A panel shown with H (or by a sim) stays.
+void App::updateAutoPanel(float dt)
+{
+    const ImGuiIO& io = ImGui::GetIO();
+    const float mx = io.MousePos.x, my = io.MousePos.y;
+    const bool inWindow = mx >= 0.0f && my >= 0.0f && mx < io.DisplaySize.x && my < io.DisplaySize.y;
+    const bool moved = mx != lastMouseX || my != lastMouseY;
+    lastMouseX = mx;
+    lastMouseY = my;
+    mouseIdle = moved ? 0.0f : mouseIdle + dt;
+    const bool inCorner = inWindow && mx < kPanelHotCorner && my < kPanelHotCorner;
+
+    if (!showControls)
+    {
+        if (inCorner && moved)
+        {
+            showControls = controlsAuto = uncollapseControls = true;
+            mouseAway = 0.0f;
+            mouseIdle = 0.0f;
+        }
+        return;
+    }
+    if (!controlsAuto)
+        return;
+    const bool over = controlsHovered || inCorner || ImGui::IsAnyItemActive() ||
+                      ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
+    mouseAway = over ? 0.0f : mouseAway + dt;
+    if (mouseAway >= kPanelLeaveSeconds || mouseIdle >= kPanelIdleSeconds)
+    {
+        showControls = false;
+        controlsAuto = false;
+        controlsHovered = false;
+    }
+}
+
 void App::drawAppUI()
 {
     // start collapsed each launch so the view opens unobstructed
     ImGui::SetNextWindowCollapsed(true, ImGuiCond_Once);
+    if (uncollapseControls)
+    {
+        uncollapseControls = false;
+        ImGui::SetNextWindowCollapsed(false, ImGuiCond_Always);
+    }
     ImGui::Begin("Explorer");
+    controlsHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows |
+                                             ImGuiHoveredFlags_AllowWhenBlockedByActiveItem |
+                                             ImGuiHoveredFlags_AllowWhenBlockedByPopup);
     ImGui::Text("%.1f FPS (%.2f ms)", ImGui::GetIO().Framerate, 1000.0f / ImGui::GetIO().Framerate);
 
     if (registry.names().size() > 1)

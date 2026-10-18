@@ -120,6 +120,13 @@ public:
         }
     }
 
+    // Hold 1 (App::kRecenterHoldSeconds): glide back to the view init() framed.
+    void recenterCamera() override
+    {
+        app->camera().easeOrbitTo(glm::vec3(0.0f), 7.0f, 0.0f, 1.57079633f,
+                                  engine::App::kRecenterEaseSeconds);
+    }
+
     void drawUI() override
     {
         ImGui::TextUnformatted("f(z) =");

@@ -26,6 +26,11 @@ public:
 
     // Optional ImGui widgets, drawn inside the explorer panel.
     virtual void drawUI() {}
+
+    // Put the shared camera back to this sim's home view (what its "Reset camera" /
+    // "Reset view" button does). App calls it when key 1 is held past
+    // App::kRecenterHoldSeconds — a tap of 1 stays the sim's own (follow toggle).
+    virtual void recenterCamera() {}
 };
 
 } // namespace engine

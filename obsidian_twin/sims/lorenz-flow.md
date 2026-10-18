@@ -90,10 +90,12 @@ Panel sections (red `sectionHeader()` titles): **Lorenz system** ($\sigma, \rho,
 `Classic (10, 28, 8/3)`, `show x' = f(x)`), **Equilibria** (one row per bead: just its
 name, `[focused]` on the zoomed one — point and type live in the hover tooltip; hovering the row lights the bead; zooming is by mouse only; `Back to global view`;
 `Ball here` drops the ball on the focused bead, remembering the global ball centre/radius,
-which come back on `Back to global view` or `Reset camera`), **Flow**, **Ball of
-trajectories**, **Ball of trajectories** also has `single at center` (a green single at the ball's
-centre, removed with the ball); **Single trajectories** has `camera follows the newest`
-— the orbit centre eases onto the newest single's head and rides it (a focused bead
+which come back on `Back to global view` or `Reset camera`), **Flow** (`Clear all` is also key **R**; arrow keys ramp the speed logarithmically down to $10^{-4}$, a decade per 1.2 s held, and `speed` is a logarithmic slider from there), **Ball of
+trajectories**, **Ball of trajectories** (`Drop ball` is also key **B**; **V** drops one with a single at its centre under the cursor, where a click would seed, sized to the view (a fixed fraction of the visible half-height at that depth); V's balls stack up to 3 (`kMaxBalls`), the oldest — with its centre single — going when a fourth is dropped, while B and the button still replace) also has `single at center` (a green single at the ball's
+centre, removed with the ball); **Single trajectories** has `camera follows the newest` (also a tap of key **1** — switching off this way leaves the camera where it is, no ease back; holding 1 recenters; `show arrows` is key **2**, fading in/out)
+— the orbit centre slides onto the newest single's head (attached at once, the offset
+at that moment decaying with a cubic ease-out over `follow ease`, as in [[vector-field]];
+another drop re-slides from where the camera is) and rides it (a focused bead
 takes over while zoomed; unticking eases back to where the camera was). Also in
 **Single trajectories**: (`label with phi^t(x0)` + size: every single
 carries $\phi^t(x_0)$, composed per frame from pieces typeset once, as in

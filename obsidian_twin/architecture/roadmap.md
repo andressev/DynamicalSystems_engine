@@ -21,8 +21,13 @@
   shockwaves via [[FrameCopy]]; "Transform flow" carries the linear picture onto $V$ on
   the GPU). Tried and dropped: a full conjugacy $H$ by a cross-section — not continuous
   at $C_\pm$ (gap on $W^u$) nor at $O$ (blow-up near $E^s$ along the fast stable
-  direction); a real one needs the stable/unstable foliations. Next: M7 — refraction
-  through the glass, polish.
+  direction); a real one needs the stable/unstable foliations. **Finished 2026-10-18**:
+  Transform flow toggles U ↔ V (always 400 seeds), **T** sends a ghost of the pairs'
+  $\psi^t$ across (orange → green), section **Linear ball U** ($E^s$/$E^u$ in $U$,
+  disks of pairs on them, Transform subspaces onto $K(E^s)$/$K(E^u)$ with glowing
+  tangent miniatures $T_{x^*}W^s(x^*)$), $W^s$/$W^u$ in $V$, Camera on U / V,
+  $\bar 0$ at $U$'s centre; App: panel auto-pull at the top-left corner, F11 borderless
+  full screen ([[Window]]). Refraction through the glass stays open.
 - **M3 landed (2026-09-24)**: [[VectorField]] + [[Integrator]] + [[Trajectory]] modules
   and the [[vector-field]] sim — typed fields on R2/R3, arrow glyphs colored by
   magnitude, trajectories integrated in real time, camera-follow. [[Expression]] gained
@@ -87,7 +92,8 @@ Orbits leaving $U$/$V$ dissolve on the rim, both at the same instant.
 - Risk: $C_\pm$ at $\rho = 28$ is near the Hopf point ($\rho_H \approx 24.74$,
   $\lambda \approx 0.094 \pm 10.19i$) → near-resonant small divisors, small valid
   radius for $K_u$ (measured: rel. defect $6\cdot10^{-5}$ at $|\theta|=2$, $0.44$ at 4);
-  the $r$ slider shows the invariance error.
+  the Hartman–Grobman radius slider stops at the measured safe radius (O 12.0,
+  C± 2.49).
 
 ## M4 — CUDA interop
 `cudaGraphicsGLRegisterBuffer` on [[Mesh]]'s VBO (exposed via `Mesh::vbo()`) for

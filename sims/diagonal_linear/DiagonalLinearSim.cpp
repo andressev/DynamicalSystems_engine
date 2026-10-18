@@ -25,6 +25,8 @@
 
 namespace {
 
+constexpr float kMinSpeed = 1e-4f;   // slowest flow (arrow keys ramp to it logarithmically)
+
 struct Preset {
     const char* name;
     float lambda[3];
@@ -126,8 +128,46 @@ public:
         if (!ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_Space, false))
             playing = !playing;
         // arrows: Up/Down speed (down to 0), Left reverse, Right forward
-        engine::FlowKeys::handle(timeScale, reverse, dt, 5.0f);
+        engine::FlowKeys::handle(timeScale, reverse, dt, 5.0f, kMinSpeed);
         engine::FlowKeys::drawStatus(timeScale, reverse, playing);
+        // 1 tapped: camera follows a single on/off — detaching leaves the camera where
+        // it is (held past App::kRecenterHoldSeconds, App calls recenterCamera instead);
+        // 2: arrow field on/off
+        if (!ImGui::GetIO().WantCaptureKeyboard &&
+            (engine::FlowKeys::tapHold(ImGuiKey_1, dt, engine::App::kRecenterHoldSeconds).tapped ||
+             engine::FlowKeys::tapHold(ImGuiKey_Keypad1, dt, engine::App::kRecenterHoldSeconds).tapped))
+        {
+            followSingle = !followSingle;
+            if (!followSingle)
+            {
+                following = false; // in place: no return to the saved centre
+                followedTraj = nullptr;
+            }
+        }
+        if (!ImGui::GetIO().WantCaptureKeyboard && (ImGui::IsKeyPressed(ImGuiKey_2, false) || ImGui::IsKeyPressed(ImGuiKey_Keypad2, false)))
+            showArrows = !showArrows;
+        // the arrow field fades in/out instead of cutting (key 2 or the checkbox)
+        {
+            const float target = showArrows ? 1.0f : 0.0f;
+            if (arrowsFade < 0.0f)
+                arrowsFade = target; // first frame: no fade from the saved state
+            const float step = dt / kArrowFadeSeconds;
+            arrowsFade += std::clamp(target - arrowsFade, -step, step);
+        }
+        // R: clear every trajectory (same as the "Clear all" button)
+        if (!ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_R, false))
+            curves.clear();
+        // B: drop a ball of trajectories (same as the button)
+        if (!ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_B, false))
+            dropBall(glm::vec3(ballCenter[0], ballCenter[1], ballCenter[2]), ballRadius,
+                     ballWithSingle, true);
+        // V: a ball with a single at its centre, where a click would seed
+        if (!ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_V, false))
+        {
+            glm::vec3 p;
+            if (cursorSeedPoint(p))
+                dropBall(p, viewFitRadius(p), true, false);
+        }
 
         integrator.method = (engine::Integrator::Method)method;
         integrator.maxStep = maxStep;
@@ -142,7 +182,7 @@ public:
         }
 
         app->camera().speed = std::max(1.0f, domainR);
-        followCamera();
+        followCamera(dt);
 
         if (subspacesDirty)
             rebuildSubspaces();
@@ -205,13 +245,13 @@ public:
             glDepthFunc(GL_LESS);
         }
 
-        if (showArrows && !glyphs.empty())
+        if (arrowsFade > 0.0f && !glyphs.empty())
         {
             // glyphs blend but never write depth, so they cannot hide a trajectory
             glDepthMask(GL_FALSE);
             shader.setInt("u_useRamp", 1);
             shader.setInt("u_useFade", 1);
-            shader.setFloat("u_alpha", arrowAlpha);
+            shader.setFloat("u_alpha", arrowAlpha * arrowsFade);
             shader.setFloat("u_alphaTail", arrowTailAlpha);
             glLineWidth(1.5f);
             glyphs.drawShafts(shader);
@@ -279,6 +319,17 @@ public:
         glDisable(GL_BLEND);
     }
 
+    // Hold 1 (App::kRecenterHoldSeconds): the home view, follow off — what "Reset
+    // camera" does.
+    void recenterCamera() override
+    {
+        followSingle = false;
+        following = false;
+        followedTraj = nullptr;
+        app->camera().easeOrbitTo(glm::vec3(0.0f), 3.0f * domainR, 0.6f, 1.1f,
+                                  engine::App::kRecenterEaseSeconds);
+    }
+
     void drawUI() override
     {
         drawSystemUI();
@@ -335,6 +386,7 @@ private:
         bool hasTangent = false;       // singles: tangent arrow drawn this frame
         glm::vec3 tangentTip{0.0f};
         bool withBall = false;         // the single at the ball's centre: goes with it
+        int ball = -1;                 // drop id of the ball it belongs to (-1: none)
     };
 
     // Pieces of the \phi^t(x_0) label, each typeset once: the label is re-composed
@@ -370,6 +422,7 @@ private:
     {
         sectionHeader("Camera");
         ImGui::TextDisabled("A/D orbit, W/S tilt, Q/E zoom");
+        ImGui::SliderFloat("follow ease", &followSeconds, 0.0f, 3.0f, "%.2f s");
         if (ImGui::Button("Reset camera"))
         {
             engine::Camera& cam = app->camera();
@@ -695,7 +748,8 @@ private:
         ImGui::SameLine();
         if (ImGui::Button("Clear all"))
             curves.clear();
-        ImGui::SliderFloat("speed", &timeScale, 0.0f, 5.0f, "%.2f x");
+        ImGui::SliderFloat("speed", &timeScale, kMinSpeed, 5.0f, "%.4f x",
+                           ImGuiSliderFlags_Logarithmic);
         ImGui::TextDisabled("%d trajectories total", (int)curves.size());
     }
 
@@ -710,7 +764,8 @@ private:
         ImGui::SameLine();
         ImGui::Checkbox("single at center", &ballWithSingle);
         if (ImGui::Button("Drop ball"))
-            dropBall(glm::vec3(ballCenter[0], ballCenter[1], ballCenter[2]));
+            dropBall(glm::vec3(ballCenter[0], ballCenter[1], ballCenter[2]), ballRadius,
+                     ballWithSingle, true);
         ImGui::SameLine();
         if (ImGui::Button("Remove ball"))
             removeBall();
@@ -928,19 +983,36 @@ private:
     // Orbit around the followed head: keep the orbit offset and move position with the
     // centre in the same frame, so the view neither lags nor stops following while
     // ImGui has the keyboard (when the camera's processInput is skipped).
-    void followCamera()
+    // When the followed single changes the centre slides onto the head over
+    // `followSeconds`: attached to the new head at once, plus the offset it had at that
+    // moment decaying with a cubic ease-out (same slide as vector_field).
+    void followCamera(float dt)
     {
         const Curve* c = followedSingle();
         if (!c)
         {
             following = false;
+            followedTraj = nullptr;
             return;
         }
         engine::Camera& cam = app->camera();
         glm::vec3 offset = cam.position - cam.orbitCenter;
         glm::vec3 head = c->traj->head();
-        cam.orbitCenter = head;
-        cam.position = head + offset;
+        if (c->traj.get() != followedTraj)
+        {
+            followedTraj = c->traj.get();
+            easeOffset = cam.orbitCenter - head;
+            easeT = 0.0f;
+        }
+        glm::vec3 centre = head;
+        if (easeT < followSeconds)
+        {
+            easeT += dt;
+            float u = 1.0f - std::clamp(easeT / followSeconds, 0.0f, 1.0f);
+            centre = head + easeOffset * (u * u * u);
+        }
+        cam.orbitCenter = centre;
+        cam.position = centre + offset;
         cam.front = glm::normalize(-offset);
         following = true;
     }
@@ -951,6 +1023,7 @@ private:
         if (!following)
             return;
         following = false;
+        followedTraj = nullptr;
         engine::Camera& cam = app->camera();
         glm::vec3 offset = cam.position - cam.orbitCenter;
         cam.orbitCenter = std::isnan(camRadius)
@@ -983,7 +1056,10 @@ private:
             if (!(mag > 1e-9f) || !std::isfinite(mag))
                 continue; // at the equilibrium there is no direction to draw
             glm::vec3 dir = vec / mag;
-            float len = tangentSize * glm::length(eye - p);
+            // constant on screen, but capped in world units so a far-out view does not
+            // grow the arrow past the scene itself
+            float len = std::min(tangentSize * glm::length(eye - p),
+                                 kTangentMaxDomainFraction * domainR);
             tangents.add(p, dir, len, mag);
             c.hasTangent = true;
             c.tangentTip = p + dir * len;
@@ -1019,34 +1095,41 @@ private:
 
     // ---- trajectories -----------------------------------------------------------
 
-    void handleSeedClick()
+    // Where a click seeds: unproject the cursor ray and stop it on a camera-facing
+    // plane spawnDepth of the way from the camera to the orbit center, so the seed
+    // lands right under the cursor, close in front of the camera, instead of somewhere
+    // deep in the scene. False when the ray misses that plane.
+    bool cursorSeedPoint(glm::vec3& out) const
     {
-        if (!ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::GetIO().WantCaptureMouse)
-            return;
-
-        // unproject the cursor ray and stop it on a camera-facing plane spawnDepth of
-        // the way from the camera to the orbit center: the seed lands right under the
-        // cursor, close in front of the camera, instead of somewhere deep in the scene
         glm::vec2 ndc = app->window().cursorPosNormalized() * 2.0f - 1.0f;
         const engine::Camera& cam = app->camera();
         glm::mat4 invVP = glm::inverse(cam.getProjectionMatrix() * cam.getViewMatrix());
         glm::vec4 nearH = invVP * glm::vec4(ndc, -1.0f, 1.0f);
         glm::vec4 farH = invVP * glm::vec4(ndc, 1.0f, 1.0f);
         if (nearH.w == 0.0f || farH.w == 0.0f)
-            return;
+            return false;
 
         glm::vec3 origin = glm::vec3(nearH) / nearH.w;
         glm::vec3 dir = glm::normalize(glm::vec3(farH) / farH.w - origin);
         float denom = glm::dot(dir, cam.front);
         if (std::abs(denom) < 1e-4f)
-            return;
+            return false;
         float toCenter = glm::dot(cam.orbitCenter - cam.position, cam.front);
         glm::vec3 planePoint = cam.position + cam.front * (spawnDepth * toCenter);
         float s = glm::dot(planePoint - origin, cam.front) / denom;
         if (s <= 0.0f)
-            return;
+            return false;
+        out = origin + dir * s;
+        return true;
+    }
 
-        addTrajectory(origin + dir * s, kSingleColor, Kind::Single);
+    void handleSeedClick()
+    {
+        if (!ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::GetIO().WantCaptureMouse)
+            return;
+        glm::vec3 p;
+        if (cursorSeedPoint(p))
+            addTrajectory(p, kSingleColor, Kind::Single);
     }
 
     void removeKind(Kind kind)
@@ -1097,12 +1180,27 @@ private:
     // Only one ball lives at a time: dropping a new one replaces the old. Seeds sit on
     // the sphere surface (Fibonacci lattice, evenly spread — the clearest view of the
     // ball deforming into an ellipsoid) or uniformly through its volume.
-    void dropBall(const glm::vec3& center)
+    // Radius for the ball V drops at p: a fixed fraction of the view's half-height at
+    // p's depth, so the fresh ball fits on screen however far in or out you are.
+    float viewFitRadius(const glm::vec3& p) const
     {
-        removeBall();
+        const engine::Camera& cam = app->camera();
+        float depth = std::max(glm::dot(p - cam.position, cam.front), 1e-3f);
+        return kViewBallFraction * depth * std::tan(glm::radians(0.5f * cam.fovDeg));
+    }
+    static constexpr float kViewBallFraction = 0.12f;
+    static constexpr float kTangentMaxDomainFraction = 0.3f;  // tangent arrow cap, of domainR
+
+    // replace: the previous ball goes first (B, the button). Otherwise the new ball
+    // joins the others and only the oldest beyond kMaxBalls is retired (V).
+    void dropBall(const glm::vec3& center, float radius, bool withSingle, bool replace)
+    {
+        if (replace)
+            removeBall();
+        const size_t first = curves.size();
         // "single at center": a green single riding the middle of the ball, labelled and
         // followable like any click-dropped one, removed with the ball
-        if (ballWithSingle)
+        if (withSingle)
         {
             addTrajectory(center, kSingleColor, Kind::Single);
             if (!curves.empty())
@@ -1127,7 +1225,28 @@ private:
                 float phi = golden * (float)k;
                 p = glm::vec3(std::cos(phi) * r, y, std::sin(phi) * r);
             }
-            addTrajectory(center + p * ballRadius, kBallColor, Kind::Ball);
+            addTrajectory(center + p * radius, kBallColor, Kind::Ball);
+        }
+        const int id = nextBallId++;
+        for (size_t i = first; i < curves.size(); ++i)
+            curves[i].ball = id;
+        if (!replace)
+            trimBalls();
+    }
+
+    // Keep the newest kMaxBalls balls (each with its centre single, if any).
+    void trimBalls()
+    {
+        std::vector<int> ids;
+        for (const Curve& c : curves)
+            if (c.ball >= 0 && std::find(ids.begin(), ids.end(), c.ball) == ids.end())
+                ids.push_back(c.ball);
+        std::sort(ids.begin(), ids.end());
+        while ((int)ids.size() > kMaxBalls)
+        {
+            const int oldest = ids.front();
+            ids.erase(ids.begin());
+            std::erase_if(curves, [oldest](const Curve& c) { return c.ball == oldest; });
         }
     }
 
@@ -1184,6 +1303,7 @@ private:
             {"subspaceArrowCount", nullptr, &subspaceArrowCount},
             {"subspaceArrowSize", &subspaceArrowSize},
             {"showArrows", nullptr, nullptr, &showArrows},
+            {"followSeconds", &followSeconds},
             {"gridN", nullptr, &gridN},
             {"arrowScale", &arrowScale},
             {"barbedHeads", nullptr, nullptr, &barbedHeads},
@@ -1282,9 +1402,11 @@ private:
         }
         // a hand-edited file should not be able to ask for a 1000^3 grid
         gridN = std::clamp(gridN, 2, 50);
+        timeScale = std::clamp(timeScale, kMinSpeed, 5.0f);
         ballCount = std::clamp(ballCount, 1, 1000);
         method = std::clamp(method, 0, 2);
         maxStep = std::clamp(maxStep, 1e-5f, 0.5f);
+        followSeconds = std::clamp(followSeconds, 0.0f, 10.0f);
         systemLatexSize = std::clamp(systemLatexSize, 10.0f, 120.0f);
         timeLabelSize = std::clamp(timeLabelSize, 10.0f, 120.0f);
         subspaceLabelSize = std::clamp(subspaceLabelSize, 10.0f, 160.0f);
@@ -1375,6 +1497,10 @@ private:
 
     // arrows
     bool showArrows = true;
+    float arrowsFade = -1.0f;         // arrow-field opacity, follows showArrows (-1: unset)
+    static constexpr float kArrowFadeSeconds = 0.35f;
+    static constexpr int kMaxBalls = 3;   // V stacks balls up to this many
+    int nextBallId = 0;
     bool arrowsDirty = true;
     bool lengthByMagnitude = false;
     bool barbedHeads = false;
@@ -1395,7 +1521,7 @@ private:
     // flow + balls
     bool playing = true;
     bool reverse = false;
-    float timeScale = 1.0f;
+    float timeScale = 1.0f;          // flow speed, kMinSpeed..5 on a logarithmic scale
     bool showTrails = true;
     int trailPoints = 600;
     float trailWidth = 1.5f;
@@ -1414,6 +1540,10 @@ private:
     bool followNewest = true;
     int followIndex = 0;             // drop order, 0-based, when not following the newest
     bool following = false;          // the camera is currently tracking a single
+    float followSeconds = 0.8f;      // slide onto a newly followed single (0 = snap)
+    const engine::Trajectory* followedTraj = nullptr; // identity of the followed single
+    glm::vec3 easeOffset{0.0f};      // orbitCenter - head when the slide began
+    float easeT = 1e9f;              // seconds into the slide (>= followSeconds: locked on)
 
     // saved orbit view (see captureCamera / applySavedCamera); NaN until saved
     float camTheta = NAN, camPhi = NAN, camRadius = NAN;

@@ -41,6 +41,7 @@ Window::Window(const char* title, int width, int height)
 
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
+    glfwSetWindowMaximizeCallback(window, maximizeCallback);
 }
 
 Window::~Window()
@@ -68,6 +69,57 @@ void Window::swapBuffers()
 void Window::pollEvents()
 {
     glfwPollEvents();
+    if (wantFullscreen)
+    {
+        wantFullscreen = false;
+        setFullscreen(true);
+    }
+}
+
+void Window::setFullscreen(bool on)
+{
+    if (on == fullscreenOn)
+        return;
+    if (on)
+    {
+        // the maximize button brings us here maximized: restore first so the saved
+        // geometry (and the window we come back to) is the plain windowed one
+        if (glfwGetWindowAttrib(window, GLFW_MAXIMIZED))
+            glfwRestoreWindow(window);
+        glfwGetWindowPos(window, &savedX, &savedY);
+        glfwGetWindowSize(window, &savedW, &savedH);
+        // the monitor holding the window's centre (the primary if none does)
+        GLFWmonitor* target = glfwGetPrimaryMonitor();
+        int count = 0;
+        GLFWmonitor** monitors = glfwGetMonitors(&count);
+        const int cx = savedX + savedW / 2, cy = savedY + savedH / 2;
+        for (int i = 0; i < count; ++i)
+        {
+            int mx, my;
+            glfwGetMonitorPos(monitors[i], &mx, &my);
+            const GLFWvidmode* m = glfwGetVideoMode(monitors[i]);
+            if (m && cx >= mx && cx < mx + m->width && cy >= my && cy < my + m->height)
+                target = monitors[i];
+        }
+        const GLFWvidmode* mode = glfwGetVideoMode(target);
+        if (!mode)
+            return;
+        // the monitor's own mode = "windowed full screen": no mode switch, nothing else on screen
+        glfwSetWindowMonitor(window, target, 0, 0, mode->width, mode->height, mode->refreshRate);
+        fullscreenOn = true;
+    }
+    else
+    {
+        glfwSetWindowMonitor(window, nullptr, savedX, savedY, savedW, savedH, 0);
+        fullscreenOn = false;
+    }
+}
+
+void Window::maximizeCallback(GLFWwindow* window, int maximized)
+{
+    Window* self = (Window*)glfwGetWindowUserPointer(window);
+    if (self && maximized && !self->fullscreenOn)
+        self->wantFullscreen = true;   // not from inside the callback: at the next pollEvents
 }
 
 glm::vec2 Window::cursorPosNormalized() const

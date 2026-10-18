@@ -40,6 +40,12 @@ public:
     // pixel-sized things (line widths, point sizes) by it so the image keeps their look.
     float renderScale() const { return captureScale; }
 
+    // Key 1 held this long recenters the camera: App calls Sim::recenterCamera once
+    // when the hold reaches it (FlowKeys::tapHold). Sims treat a shorter press as a tap.
+    static constexpr float kRecenterHoldSeconds = 1.0f;
+    // How long a recenter glides (sims pass it to Camera::easeOrbitTo or their own view ease).
+    static constexpr float kRecenterEaseSeconds = 1.0f;
+
     // Values one sim hands to the next on a requestSwitch (parameters, a camera to
     // return to...): plain key -> number, so sims never include each other's headers.
     using Handoff = std::map<std::string, double>;
@@ -55,6 +61,16 @@ public:
     // What the sim that switched into this one handed over; empty when it was started
     // from the menu or at launch. Read it in init(); valid until the next switch.
     const Handoff& handoff() const { return handoffValues; }
+
+    // The Explorer panel (App's FPS/menu row + the sim's drawUI). H toggles it; a sim
+    // may hide it itself (e.g. when it starts a presentation-like animation). A hidden
+    // panel also pulls in by itself when the mouse reaches the top-left corner of the
+    // window and goes again once the mouse leaves it or rests for kPanelIdleSeconds.
+    bool controlsVisible() const { return showControls; }
+    void setControlsVisible(bool on) { showControls = on; controlsAuto = false; }
+    static constexpr float kPanelHotCorner = 48.0f;   // px from the top-left corner
+    static constexpr float kPanelIdleSeconds = 3.0f;
+    static constexpr float kPanelLeaveSeconds = 0.6f; // grace once the mouse is off it
 
 private:
     // GL texture for one menu tile, loaded from SimRegistry's thumbnailPath
@@ -75,6 +91,14 @@ private:
     Handoff pendingHandoff;
     Handoff handoffValues;  // what the active sim was handed
     float captureScale = 1.0f;
+    bool showControls = true; // the Explorer panel (sim controls); H toggles it
+    bool controlsAuto = false;   // shown by the hot corner: hides on leave / idle
+    bool controlsHovered = false; // the panel under the mouse last frame (drawAppUI)
+    bool uncollapseControls = false; // open the panel on the next drawAppUI
+    float mouseIdle = 0.0f;       // seconds the mouse has not moved
+    float mouseAway = 0.0f;       // seconds the mouse has been off the auto panel
+    float lastMouseX = -1.0f, lastMouseY = -1.0f;
+    void updateAutoPanel(float dt);
 
     void switchTo(int index);
     void loadThumbnails();

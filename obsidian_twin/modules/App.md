@@ -48,6 +48,24 @@ Sims use the `App&` handed to `init`:
   so the sim's UI isn't destroyed mid-frame). Menu only exists when more than one sim is
   registered — the same App serves the explorer and standalone builds.
 - Camera keyboard input and ESC are suppressed while ImGui wants the keyboard.
+- **1 held** for `kRecenterHoldSeconds` (1 s) calls the active [[Sim]]'s
+  `recenterCamera()` once, in every sim ([[FlowKeys]] `tapHold` tells a hold from a
+  tap, so a sim reading the tap for its follow toggle never sees the hold as a tap).
+  The recenter glides over `kRecenterEaseSeconds` (1 s): sims call [[Camera]]
+  `easeOrbitTo`, which `run` advances each frame (`cam.updateEase(dt)`) before input.
+- **F11** toggles borderless full screen ([[Window]] `toggleFullscreen`; the window's
+  maximize button enters it as well).
+- **H** toggles the Explorer panel (App's FPS/menu row + the sim's `drawUI`) in every
+  sim — `showControls`, checked in `run` before `drawAppUI`; a sim reads / sets it with
+  `controlsVisible()` / `setControlsVisible(bool)` (e.g. [[lorenz-equilibrium]] hides it
+  when Show conjugacy starts the timeline). A hidden panel also pulls in by itself
+  when the mouse reaches the window's top-left corner (`kPanelHotCorner`, 48 px,
+  opened uncollapsed) and goes again once the mouse has been off it for
+  `kPanelLeaveSeconds` (0.6 s) or still for `kPanelIdleSeconds` (3 s) —
+  `updateAutoPanel`, before the sim's update; a panel shown with H or by the sim stays
+  (`controlsAuto`). Only the panel: overlays
+  a sim draws itself ([[FlowKeys]] status, LaTeX HUD) stay. A hidden panel skips
+  `drawUI` entirely, so sims must not depend on it running every frame.
 - Screenshot PNGs are written by a tiny encoder in `App.cpp` (stored deflate blocks, no
   zlib/stb_image_write), so files are raw-sized (~11 MB at 2560×1440).
 - `~App` destroys the active sim before shutting down ImGui; Window (context) dies last.

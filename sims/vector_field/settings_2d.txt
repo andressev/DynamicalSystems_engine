@@ -8,7 +8,7 @@ showAxes 1
 barbedHeads 0
 lengthByMagnitude 0
 autoColorScale 1
-gridN 53
+gridN 20
 arrowScale 1.175
 headFraction 0.36
 headWidth 0.14
@@ -27,13 +27,15 @@ ballCenterZ 0
 ballRadius 0.5
 ballCount 200
 ballFilled 0
+ballWithSingle 0
 spawnDepth 0.3
 singleScale 2
 timeLabelSize 36
+systemLatexSize 30
 showSeedValues 0
 showTangents 1
 tangentSize 0.12
-followSingle 1
+followSingle 0
 followNewest 1
 followIndex 0
 showTrails 1
@@ -50,6 +52,6 @@ cameraCenterY 0
 cameraCenterZ 0
 orbitSpeed 1.2
 zoomSpeed 0
-viewCenterX -0.292609
-viewCenterY 0.453818
-viewScale 2.81334
+viewCenterX 0.0419899
+viewCenterY 0.188465
+viewScale 0.70089

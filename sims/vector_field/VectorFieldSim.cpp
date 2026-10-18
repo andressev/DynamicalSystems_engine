@@ -94,6 +94,8 @@ std::string texNumber(float v)
 // Everything a mode (R2 or R3) remembers: the typed field, every control, and the
 // view. The sim holds one per mode and swaps them on an R2/R3 switch, so each mode
 // keeps its own state; each is saved to its own file.
+constexpr float kMinSpeed = 1e-4f;   // slowest flow (arrow keys ramp to it logarithmically)
+
 struct Settings {
     char comps[3][256] = {};
 
@@ -116,7 +118,7 @@ struct Settings {
     float arrowTailAlpha = 0.25f;
     float manualColorMax = 10.0f;
 
-    float timeScale = 1.0f;
+    float timeScale = 1.0f;       // flow speed, kMinSpeed..10 on a logarithmic scale
     bool reverse = false;
     int method = 2;               // Integrator::Method, RK4
     float maxStep = 0.01f;
@@ -149,6 +151,7 @@ struct Settings {
     float camCenter[3] = {0.0f, 0.0f, 0.0f};
     float orbitSpeed = 1.2f;      // rad/s
     float zoomSpeed = 0.0f;       // world units/s, <= 0: scale with the domain
+    float followSeconds = 0.8f;   // ease onto a newly followed single (0 = snap)
 
     // R2 pan/zoom window: centre and half-height
     float viewCenter[2] = {0.0f, 0.0f};
@@ -227,6 +230,7 @@ std::vector<Setting> settingsTable(Settings& s)
         {"cameraCenterX", &s.camCenter[0]}, {"cameraCenterY", &s.camCenter[1]},
         {"cameraCenterZ", &s.camCenter[2]},
         {"orbitSpeed", &s.orbitSpeed}, {"zoomSpeed", &s.zoomSpeed},
+        {"followSeconds", &s.followSeconds},
         {"viewCenterX", &s.viewCenter[0]}, {"viewCenterY", &s.viewCenter[1]},
         {"viewScale", &s.viewScale},
     };
@@ -280,11 +284,13 @@ void loadSettingsFile(Settings& s, const char* path)
     s.gridN = std::clamp(s.gridN, 2, 80);
     s.ballCount = std::clamp(s.ballCount, 1, 1000);
     s.trailPoints = std::clamp(s.trailPoints, 32, 20000);
+    s.timeScale = std::clamp(s.timeScale, kMinSpeed, 10.0f);
     s.domainR = std::clamp(s.domainR, 0.5f, 200.0f);
     s.method = std::clamp(s.method, 0, 2);
     s.systemLatexSize = std::clamp(s.systemLatexSize, 10.0f, 120.0f);
     s.maxStep = std::clamp(s.maxStep, 1e-5f, 0.5f);
     s.viewScale = std::clamp(s.viewScale, 1e-3f, 1e5f);
+    s.followSeconds = std::clamp(s.followSeconds, 0.0f, 10.0f);
 }
 
 // ---- the sim --------------------------------------------------------------------
@@ -334,7 +340,7 @@ public:
         if (!ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_Space, false))
             playing = !playing;
         // arrows: Up/Down speed (down to 0), Left reverse, Right forward
-        engine::FlowKeys::handle(cfg.timeScale, cfg.reverse, dt, 10.0f);
+        engine::FlowKeys::handle(cfg.timeScale, cfg.reverse, dt, 10.0f, kMinSpeed);
         engine::FlowKeys::drawStatus(cfg.timeScale, cfg.reverse, playing);
 
         integrator.method = (engine::Integrator::Method)cfg.method;
@@ -359,11 +365,12 @@ public:
             cam.orbitAngularSpeed = cfg.orbitSpeed;
             cam.speed = cfg.zoomSpeed > 0.0f ? cfg.zoomSpeed
                                              : std::max(1.0f, cfg.domainR * 0.5f);
-            followCamera();
+            followCamera(dt);
         }
         else
         {
-            followCamera();
+            updateViewEase(dt);
+            followCamera(dt);
             // the R2 glyph grid covers the visible window: pan, zoom or resize resamples
             glm::vec4 view(cfg.viewCenter[0], cfg.viewCenter[1], cfg.viewScale,
                            app->window().aspect());
@@ -381,6 +388,46 @@ public:
         drawSystemOverlay();
         drawTimeLabels();
         drawTangentLabels();
+
+        // 1 tapped: camera follows a single on/off — detaching leaves the camera where
+        // it is (held past App::kRecenterHoldSeconds, App calls recenterCamera instead);
+        // 2: arrow field on/off
+        if (!ImGui::GetIO().WantCaptureKeyboard &&
+            (engine::FlowKeys::tapHold(ImGuiKey_1, dt, engine::App::kRecenterHoldSeconds).tapped ||
+             engine::FlowKeys::tapHold(ImGuiKey_Keypad1, dt, engine::App::kRecenterHoldSeconds).tapped))
+        {
+            cfg.followSingle = !cfg.followSingle;
+            if (!cfg.followSingle)
+            {
+                following = false; // in place: no return to the saved centre
+                followedTraj = nullptr;
+            }
+        }
+        if (!ImGui::GetIO().WantCaptureKeyboard && (ImGui::IsKeyPressed(ImGuiKey_2, false) || ImGui::IsKeyPressed(ImGuiKey_Keypad2, false)))
+            cfg.showArrows = !cfg.showArrows;
+        // the arrow field fades in/out instead of cutting (key 2 or the checkbox)
+        {
+            const float target = cfg.showArrows ? 1.0f : 0.0f;
+            if (arrowsFade < 0.0f)
+                arrowsFade = target; // first frame: no fade from the saved state
+            const float step = dt / kArrowFadeSeconds;
+            arrowsFade += std::clamp(target - arrowsFade, -step, step);
+        }
+        // R: clear every trajectory (same as the "Clear all" button)
+        if (!ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_R, false))
+            curves.clear();
+        // B: drop a ball / disk of trajectories (same as the button)
+        if (!ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_B, false))
+            dropBall(glm::vec3(cfg.ballCenter[0], cfg.ballCenter[1],
+                               dim == 3 ? cfg.ballCenter[2] : 0.0f),
+                     cfg.ballRadius, cfg.ballWithSingle, true);
+        // V: a ball with a single at its centre, where a click would seed
+        if (!ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_V, false))
+        {
+            glm::vec3 p;
+            if (cursorSeedPoint(p))
+                dropBall(p, viewFitRadius(p), true, false);
+        }
 
         // 0: supersampled screenshot of the scene alone (no panel, no LaTeX labels)
         if (!ImGui::GetIO().WantCaptureKeyboard &&
@@ -421,20 +468,26 @@ public:
             axisMesh->draw(GL_LINES);
         }
 
-        if (cfg.showArrows && !glyphs.empty())
+        if (arrowsFade > 0.0f && (!glyphs.empty() || !glyphsFine.empty()))
         {
             // glyphs blend but never write depth, so they cannot hide a trajectory
             glDepthMask(GL_FALSE);
-            shader.setInt("u_useRamp", 1);
-            shader.setInt("u_useFade", 1);
-            shader.setFloat("u_alpha", cfg.arrowAlpha);
-            shader.setFloat("u_alphaTail", cfg.arrowTailAlpha);
             glLineWidth(1.5f * px);
-            glyphs.drawShafts(shader);
-            shader.setInt("u_useFade", 0);
-            shader.setInt("u_shadeMode", 1);
-            glyphs.drawHeads(shader);
-            shader.setInt("u_shadeMode", 0);
+            auto drawBatch = [&](const engine::ArrowGlyphs& batch, float alphaMul) {
+                if (batch.empty() || alphaMul <= 0.0f)
+                    return;
+                shader.setInt("u_useRamp", 1);
+                shader.setInt("u_useFade", 1);
+                shader.setFloat("u_alpha", cfg.arrowAlpha * alphaMul * arrowsFade);
+                shader.setFloat("u_alphaTail", cfg.arrowTailAlpha * alphaMul);
+                batch.drawShafts(shader);
+                shader.setInt("u_useFade", 0);
+                shader.setInt("u_shadeMode", 1);
+                batch.drawHeads(shader);
+                shader.setInt("u_shadeMode", 0);
+            };
+            drawBatch(glyphs, 1.0f);
+            drawBatch(glyphsFine, fineAlpha); // R2 only: the next level fading in
             shader.setInt("u_useRamp", 0);
             shader.setInt("u_useFade", 0);
             shader.setFloat("u_alpha", 1.0f);
@@ -481,6 +534,44 @@ public:
         if (dim == 2)
             glEnable(GL_DEPTH_TEST);
         glDisable(GL_BLEND);
+    }
+
+    // Hold 1 (App::kRecenterHoldSeconds): glide to the home view, follow off — where
+    // "Reset view" / "Reset camera" snap to.
+    void recenterCamera() override
+    {
+        cfg.followSingle = false;
+        following = false;
+        followedTraj = nullptr;
+        if (dim == 2)
+        {
+            viewEaseFrom = glm::vec3(cfg.viewCenter[0], cfg.viewCenter[1], cfg.viewScale);
+            viewEaseTo = glm::vec3(0.0f, 0.0f, 5.0f);
+            viewEaseT = 0.0f;
+            viewEaseDuration = engine::App::kRecenterEaseSeconds;
+            return;
+        }
+        cfg.camRadius = 0.0f;
+        cfg.camTheta = 0.6f;
+        cfg.camPhi = 1.1f;
+        cfg.camCenter[0] = cfg.camCenter[1] = cfg.camCenter[2] = 0.0f;
+        app->camera().easeOrbitTo(glm::vec3(0.0f), 3.0f * cfg.domainR, 0.6f, 1.1f,
+                                  engine::App::kRecenterEaseSeconds);
+    }
+
+    // R2 counterpart of Camera::easeOrbitTo for the pan/zoom window (scale in log space).
+    void updateViewEase(float dt)
+    {
+        if (viewEaseT >= viewEaseDuration)
+            return;
+        viewEaseT += dt;
+        const float t = std::clamp(viewEaseT / viewEaseDuration, 0.0f, 1.0f);
+        const float s = t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
+        cfg.viewCenter[0] = glm::mix(viewEaseFrom.x, viewEaseTo.x, s);
+        cfg.viewCenter[1] = glm::mix(viewEaseFrom.y, viewEaseTo.y, s);
+        cfg.viewScale = viewEaseFrom.z * std::pow(viewEaseTo.z / viewEaseFrom.z, s);
+        if (t >= 1.0f)
+            viewEaseDuration = 0.0f;
     }
 
     void drawUI() override
@@ -558,6 +649,7 @@ private:
         bool hasTangent = false;       // singles: tangent arrow drawn this frame
         glm::vec3 tangentTip{0.0f};
         bool withBall = false;         // the single at the ball's centre: goes with it
+        int ball = -1;                 // drop id of the ball it belongs to (-1: none)
     };
 
     // Pieces of the \phi^t(seed) label, each typeset once and re-composed every frame,
@@ -650,7 +742,8 @@ private:
         ImGui::SameLine();
         if (ImGui::Button("Clear all"))
             curves.clear();
-        ImGui::SliderFloat("speed", &cfg.timeScale, 0.0f, 10.0f, "%.2f x");
+        ImGui::SliderFloat("speed", &cfg.timeScale, kMinSpeed, 10.0f, "%.4f x",
+                           ImGuiSliderFlags_Logarithmic);
         int diverged = 0;
         for (const Curve& c : curves)
             diverged += c.traj->diverged() ? 1 : 0;
@@ -677,7 +770,9 @@ private:
         ImGui::SameLine();
         ImGui::Checkbox("single at center", &cfg.ballWithSingle);
         if (ImGui::Button(dim == 2 ? "Drop disk" : "Drop ball"))
-            dropBall();
+            dropBall(glm::vec3(cfg.ballCenter[0], cfg.ballCenter[1],
+                               dim == 3 ? cfg.ballCenter[2] : 0.0f),
+                     cfg.ballRadius, cfg.ballWithSingle, true);
         ImGui::SameLine();
         if (ImGui::Button(dim == 2 ? "Remove disk" : "Remove ball"))
             removeBall();
@@ -777,7 +872,8 @@ private:
             ImGui::SetNextItemWidth(110.0f);
             ImGui::DragFloat("max |f|", &cfg.manualColorMax, 0.05f, 1e-3f, 1e6f);
         }
-        ImGui::TextDisabled("sampled max |f| = %.4g   arrows = %d", sampledMaxMag, glyphs.arrows());
+        ImGui::TextDisabled("sampled max |f| = %.4g   arrows = %d", sampledMaxMag,
+                            glyphs.arrows() + glyphsFine.arrows());
         ImGui::TextDisabled("last rebuild %.2f ms (parallel sampling, instanced glyphs)", rebuildMs);
     }
 
@@ -823,6 +919,7 @@ private:
             ImGui::TextDisabled("WASD pan, Q/E zoom");
             ImGui::DragFloat2("view center", cfg.viewCenter, 0.05f);
             ImGui::DragFloat("half height", &cfg.viewScale, 0.05f, 1e-3f, 1e5f, "%.3f");
+            ImGui::SliderFloat("follow ease", &cfg.followSeconds, 0.0f, 3.0f, "%.2f s");
             if (ImGui::Button("Reset view"))
             {
                 cfg.viewCenter[0] = cfg.viewCenter[1] = 0.0f;
@@ -836,6 +933,7 @@ private:
             ImGui::SliderFloat("zoom speed", &cfg.zoomSpeed, 0.0f,
                                std::max(20.0f, cfg.domainR * 2.0f),
                                cfg.zoomSpeed > 0.0f ? "%.1f /s" : "auto");
+            ImGui::SliderFloat("follow ease", &cfg.followSeconds, 0.0f, 3.0f, "%.2f s");
             if (ImGui::Button("Reset camera"))
             {
                 cfg.camRadius = 0.0f;
@@ -873,30 +971,54 @@ private:
     // and radius) is kept and the position moved with the centre in the same frame, so
     // the view neither lags nor stops following while ImGui has the keyboard.
     // R2: the pan/zoom window is centred on the head (zoom stays yours).
-    void followCamera()
+    // Whenever the followed single changes (a new one dropped, follow switched on, the
+    // follow # moved) the centre slides onto the head over `followSeconds`: the camera
+    // is attached to the new head at once (so it already rides its motion) plus the
+    // offset it had at that moment, which decays with a cubic ease-out — full speed
+    // away from the old spot, gentle arrival. A new single mid-slide restarts from the
+    // current centre, so there is never a jump.
+    void followCamera(float dt)
     {
         const Curve* c = followedSingle();
         if (!c)
         {
             following = false; // nothing to follow (e.g. singles cleared): panning is back
+            followedTraj = nullptr;
             return;
         }
+        glm::vec3 centre = dim == 2 ? glm::vec3(cfg.viewCenter[0], cfg.viewCenter[1], 0.0f)
+                                    : app->camera().orbitCenter;
+        glm::vec3 head = c->traj->head();
+        if (c->traj.get() != followedTraj)
+        {
+            followedTraj = c->traj.get();
+            easeOffset = centre - head;
+            easeT = 0.0f;
+        }
+        if (easeT < cfg.followSeconds)
+        {
+            easeT += dt;
+            float u = 1.0f - std::clamp(easeT / cfg.followSeconds, 0.0f, 1.0f);
+            centre = head + easeOffset * (u * u * u); // ease-out: offset -> 0
+        }
+        else
+            centre = head;
+
         if (dim == 2)
         {
-            glm::vec3 head = c->traj->head();
-            cfg.viewCenter[0] = head.x;
-            cfg.viewCenter[1] = head.y;
+            cfg.viewCenter[0] = centre.x;
+            cfg.viewCenter[1] = centre.y;
             following = true;
             return;
         }
         engine::Camera& cam = app->camera();
         glm::vec3 offset = cam.position - cam.orbitCenter;
-        glm::vec3 head = c->traj->head();
-        cam.orbitCenter = head;
-        cam.position = head + offset;
+        cam.orbitCenter = centre;
+        cam.position = centre + offset;
         cam.front = glm::normalize(-offset);
         following = true;
     }
+
 
     // Back to orbiting the saved centre, same angles and distance.
     void releaseFollow()
@@ -904,6 +1026,7 @@ private:
         if (!following)
             return;
         following = false;
+        followedTraj = nullptr;
         if (dim == 2)
             return; // the window simply stays where the particle left it
         engine::Camera& cam = app->camera();
@@ -940,7 +1063,10 @@ private:
             if (!(mag > 1e-9f) || !std::isfinite(mag))
                 continue; // at an equilibrium there is no direction to draw
             glm::vec3 dir = vec / mag;
+            // constant on screen, but capped in world units so a far-out view does not
+            // grow the arrow past the scene itself
             float len = cfg.tangentSize * (dim == 2 ? cfg.viewScale : glm::length(eye - p));
+            len = std::min(len, dim == 2 ? kTangentMaxLen2D : kTangentMaxDomainFraction * cfg.domainR);
             tangents.add(p, dir, len, mag, dim);
             c.hasTangent = true;
             c.tangentTip = p + dir * len;
@@ -1136,6 +1262,7 @@ private:
     void switchMode(int newDim)
     {
         following = false;   // enterMode() re-applies the R3 camera from settings
+        followedTraj = nullptr;
         std::swap(cfg, stashed);
         dim = newDim;
         curves.clear();
@@ -1214,6 +1341,9 @@ private:
             return;
         const engine::Window& win = app->window();
         float pan = cfg.viewScale * dt;
+        for (char k : {'A', 'D', 'S', 'W', 'Q', 'E'})
+            if (win.keyDown(k))
+                viewEaseDuration = 0.0f; // the user takes over mid-glide
         if (!following) // while following, the particle owns the centre; zoom stays
         {
             if (win.keyDown('A')) cfg.viewCenter[0] -= pan;
@@ -1225,12 +1355,11 @@ private:
         if (win.keyDown('E')) cfg.viewScale *= std::exp(dt);
     }
 
-    // R2: the seed is the point under the cursor. R3: under the cursor on a camera-facing
-    // plane spawnDepth of the way to the orbit center, so it lands just in front of you.
-    void handleSeedClick()
+    // Where a click seeds. R2: the point under the cursor. R3: under the cursor on a
+    // camera-facing plane spawnDepth of the way to the orbit center, so it lands just in
+    // front of you. False when the cursor ray misses that plane.
+    bool cursorSeedPoint(glm::vec3& out) const
     {
-        if (!ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::GetIO().WantCaptureMouse)
-            return;
         glm::vec2 ndc = app->window().cursorPosNormalized() * 2.0f - 1.0f;
 
         if (dim == 2)
@@ -1238,8 +1367,8 @@ private:
             glm::vec2 p = glm::vec2(cfg.viewCenter[0], cfg.viewCenter[1]) +
                           ndc * glm::vec2(cfg.viewScale * app->window().aspect(),
                                           cfg.viewScale);
-            addTrajectory(glm::vec3(p, 0.0f), kSingleColor, Kind::Single);
-            return;
+            out = glm::vec3(p, 0.0f);
+            return true;
         }
 
         const engine::Camera& cam = app->camera();
@@ -1247,18 +1376,28 @@ private:
         glm::vec4 nearH = invVP * glm::vec4(ndc, -1.0f, 1.0f);
         glm::vec4 farH = invVP * glm::vec4(ndc, 1.0f, 1.0f);
         if (nearH.w == 0.0f || farH.w == 0.0f)
-            return;
+            return false;
         glm::vec3 origin = glm::vec3(nearH) / nearH.w;
         glm::vec3 dir = glm::normalize(glm::vec3(farH) / farH.w - origin);
         float denom = glm::dot(dir, cam.front);
         if (std::abs(denom) < 1e-4f)
-            return;
+            return false;
         float toCenter = glm::dot(cam.orbitCenter - cam.position, cam.front);
         glm::vec3 planePoint = cam.position + cam.front * (cfg.spawnDepth * toCenter);
         float s = glm::dot(planePoint - origin, cam.front) / denom;
         if (s <= 0.0f)
+            return false;
+        out = origin + dir * s;
+        return true;
+    }
+
+    void handleSeedClick()
+    {
+        if (!ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::GetIO().WantCaptureMouse)
             return;
-        addTrajectory(origin + dir * s, kSingleColor, Kind::Single);
+        glm::vec3 p;
+        if (cursorSeedPoint(p))
+            addTrajectory(p, kSingleColor, Kind::Single);
     }
 
     // ---- trajectories -------------------------------------------------------------
@@ -1286,14 +1425,30 @@ private:
     // One ball (R2: disk) at a time; dropping replaces it. Seeds sit evenly on the
     // boundary (R2: circle, R3: Fibonacci sphere — the clearest view of the deformation)
     // or uniformly through the inside.
-    void dropBall()
+    // Radius for the ball V drops at p: a fixed fraction of the view's half-height at
+    // p's depth, so the fresh ball fits on screen however far in or out you are.
+    float viewFitRadius(const glm::vec3& p) const
     {
-        removeBall();
-        glm::vec3 center(cfg.ballCenter[0], cfg.ballCenter[1],
-                         dim == 3 ? cfg.ballCenter[2] : 0.0f);
+        if (dim == 2)
+            return kViewBallFraction * cfg.viewScale;
+        const engine::Camera& cam = app->camera();
+        float depth = std::max(glm::dot(p - cam.position, cam.front), 1e-3f);
+        return kViewBallFraction * depth * std::tan(glm::radians(0.5f * cam.fovDeg));
+    }
+    static constexpr float kViewBallFraction = 0.12f;
+    static constexpr float kTangentMaxLen2D = 2.0f;           // world units (R2)
+    static constexpr float kTangentMaxDomainFraction = 0.3f;  // of domainR (R3)
+
+    // replace: the previous ball goes first (B, the button). Otherwise the new ball
+    // joins the others and only the oldest beyond kMaxBalls is retired (V).
+    void dropBall(const glm::vec3& center, float radius, bool withSingle, bool replace)
+    {
+        if (replace)
+            removeBall();
+        const size_t first = curves.size();
         // "single at center": a green single riding the middle of the ball, labelled and
         // followable like any click-dropped one, removed with the ball
-        if (cfg.ballWithSingle)
+        if (withSingle)
         {
             addTrajectory(center, kSingleColor, Kind::Single);
             if (!curves.empty())
@@ -1323,7 +1478,28 @@ private:
                 float phi = golden * (float)k;
                 p = glm::vec3(std::cos(phi) * r, y, std::sin(phi) * r);
             }
-            addTrajectory(center + p * cfg.ballRadius, kBallColor, Kind::Ball);
+            addTrajectory(center + p * radius, kBallColor, Kind::Ball);
+        }
+        const int id = nextBallId++;
+        for (size_t i = first; i < curves.size(); ++i)
+            curves[i].ball = id;
+        if (!replace)
+            trimBalls();
+    }
+
+    // Keep the newest kMaxBalls balls (each with its centre single, if any).
+    void trimBalls()
+    {
+        std::vector<int> ids;
+        for (const Curve& c : curves)
+            if (c.ball >= 0 && std::find(ids.begin(), ids.end(), c.ball) == ids.end())
+                ids.push_back(c.ball);
+        std::sort(ids.begin(), ids.end());
+        while ((int)ids.size() > kMaxBalls)
+        {
+            const int oldest = ids.front();
+            ids.erase(ids.begin());
+            std::erase_if(curves, [oldest](const Curve& c) { return c.ball == oldest; });
         }
     }
 
@@ -1360,18 +1536,38 @@ private:
         }
 
         gridPoints.clear();
+        finePoints.clear();
+        fineAlpha = 0.0f;
         float spacing;
         if (dim == 2)
         {
+            // Arrows sit on points of the plane, not of the screen: the grid is anchored
+            // at the origin with a power-of-two spacing, so zooming magnifies it like the
+            // curves. The spacing is the first level at or above the target screen spacing
+            // s (gridN rows); the next finer level -- the points between -- fades in as the
+            // zoom approaches the point where it becomes the level itself (t -> 2), so
+            // arrows appear between their neighbours instead of the whole grid resampling.
             float sx = cfg.viewScale * app->window().aspect(), sy = cfg.viewScale;
-            spacing = 2.0f * sy / (float)cfg.gridN;
-            float x0 = std::floor((cfg.viewCenter[0] - sx) / spacing) * spacing;
-            float y0 = std::floor((cfg.viewCenter[1] - sy) / spacing) * spacing;
-            int nx = (int)std::ceil(2.0f * sx / spacing) + 2;
-            int ny = cfg.gridN + 2;
-            for (int j = 0; j < ny; ++j)
-                for (int i = 0; i < nx; ++i)
-                    gridPoints.emplace_back(x0 + i * spacing, y0 + j * spacing, 0.0f);
+            spacing = 2.0f * sy / (float)cfg.gridN;                      // target, screen-constant
+            const float level = std::exp2(std::ceil(std::log2(spacing))); // in [s, 2s)
+            const float t = level / spacing;
+            fineAlpha = glm::smoothstep(1.0f, 2.0f, t);
+
+            const float fine = 0.5f * level;
+            const int i0 = (int)std::floor((cfg.viewCenter[0] - sx) / fine) - 1;
+            const int j0 = (int)std::floor((cfg.viewCenter[1] - sy) / fine) - 1;
+            const int i1 = (int)std::ceil((cfg.viewCenter[0] + sx) / fine) + 1;
+            const int j1 = (int)std::ceil((cfg.viewCenter[1] + sy) / fine) + 1;
+            for (int j = j0; j <= j1; ++j)
+                for (int i = i0; i <= i1; ++i)
+                {
+                    glm::vec3 p(i * fine, j * fine, 0.0f);
+                    const bool onLevel = (i % 2 == 0) && (j % 2 == 0);
+                    if (onLevel)
+                        gridPoints.push_back(p);
+                    else if (fineAlpha > 0.0f)
+                        finePoints.push_back(p);
+                }
         }
         else
         {
@@ -1387,28 +1583,41 @@ private:
         // every sample is independent, so the field is evaluated across all cores
         // (VectorField::eval is thread-safe); the max is a serial pass afterwards
         auto t0 = std::chrono::steady_clock::now();
-        gridVectors.resize(gridPoints.size());
-        std::transform(std::execution::par, gridPoints.begin(), gridPoints.end(),
-                       gridVectors.begin(), [this](const glm::vec3& p) {
-                           double x[3] = {p.x, p.y, p.z}, v[3] = {0.0, 0.0, 0.0};
-                           field.eval(x, fieldTime, v);
-                           glm::vec3 vec((float)v[0], (float)v[1],
-                                         dim == 3 ? (float)v[2] : 0.0f);
-                           if (!std::isfinite(vec.x) || !std::isfinite(vec.y)
-                               || !std::isfinite(vec.z))
-                               vec = glm::vec3(0.0f);
-                           return vec;
-                       });
-        for (const glm::vec3& v : gridVectors)
-            sampledMaxMag = std::max(sampledMaxMag, glm::length(v));
+        auto sample = [this](const std::vector<glm::vec3>& points, std::vector<glm::vec3>& out) {
+            out.resize(points.size());
+            std::transform(std::execution::par, points.begin(), points.end(), out.begin(),
+                           [this](const glm::vec3& p) {
+                               double x[3] = {p.x, p.y, p.z}, v[3] = {0.0, 0.0, 0.0};
+                               field.eval(x, fieldTime, v);
+                               glm::vec3 vec((float)v[0], (float)v[1],
+                                             dim == 3 ? (float)v[2] : 0.0f);
+                               if (!std::isfinite(vec.x) || !std::isfinite(vec.y)
+                                   || !std::isfinite(vec.z))
+                                   vec = glm::vec3(0.0f);
+                               return vec;
+                           });
+            for (const glm::vec3& v : out)
+                sampledMaxMag = std::max(sampledMaxMag, glm::length(v));
+        };
+        sample(gridPoints, gridVectors);
+        sample(finePoints, fineVectors);
 
-        // uniform length by default: direction is the glyph's job, magnitude the ramp's
-        glyphs.barbs = cfg.barbedHeads;
-        glyphs.headFraction = cfg.headFraction;
-        glyphs.headWidth = cfg.headWidth;
+        // uniform length by default: direction is the glyph's job, magnitude the ramp's.
+        // The length follows the screen-constant target spacing, so arrows keep their
+        // pixel size across zoom levels and never overlap once the fine level is in.
+        for (engine::ArrowGlyphs* g : {&glyphs, &glyphsFine})
+        {
+            g->barbs = cfg.barbedHeads;
+            g->headFraction = cfg.headFraction;
+            g->headWidth = cfg.headWidth;
+        }
         glyphs.addField(gridPoints, gridVectors, spacing * cfg.arrowScale, colorMax(),
                         cfg.hideBelow, cfg.lengthByMagnitude, dim);
         glyphs.upload();
+        glyphsFine.clear();
+        glyphsFine.addField(finePoints, fineVectors, spacing * cfg.arrowScale, colorMax(),
+                            cfg.hideBelow, cfg.lengthByMagnitude, dim);
+        glyphsFine.upload();
         rebuildMs = std::chrono::duration<float, std::milli>(
                         std::chrono::steady_clock::now() - t0).count();
     }
@@ -1420,6 +1629,14 @@ private:
     engine::Shader shader;
     std::unique_ptr<engine::Mesh> axisMesh;
     engine::ArrowGlyphs glyphs;
+    engine::ArrowGlyphs glyphsFine;    // R2: the next finer grid level, drawn at fineAlpha
+    float arrowsFade = -1.0f;         // arrow-field opacity, follows showArrows (-1: unset)
+    glm::vec3 viewEaseFrom{0.0f}, viewEaseTo{0.0f}; // R2 recenter glide: (cx, cy, scale)
+    float viewEaseT = 0.0f, viewEaseDuration = 0.0f;
+    static constexpr float kArrowFadeSeconds = 0.35f;
+    static constexpr int kMaxBalls = 3;   // V stacks balls up to this many
+    int nextBallId = 0;
+    float fineAlpha = 0.0f;
 
     int dim = 2;
     Settings cfg;       // the active mode's settings
@@ -1446,12 +1663,17 @@ private:
     engine::LatexImage tangentLabel;   // \dot{x}
     float tangentLabelSize = 0.0f;
     bool following = false;            // the camera is currently tracking a single
+    const engine::Trajectory* followedTraj = nullptr; // identity of the followed single
+    glm::vec3 easeOffset{0.0f};        // centre - head when the slide onto followedTraj began
+    float easeT = 1e9f;                // seconds into that slide (>= followSeconds: locked on)
 
     bool arrowsDirty = true;
     float sampledMaxMag = 0.0f;
     float rebuildMs = 0.0f;       // last glyph rebuild: sample + upload, shown in the UI
     std::vector<glm::vec3> gridPoints;
     std::vector<glm::vec3> gridVectors;
+    std::vector<glm::vec3> finePoints;   // R2 fine level (points between gridPoints)
+    std::vector<glm::vec3> fineVectors;
     glm::vec4 lastView2D{0.0f};   // R2 window the glyphs were sampled for
 };
 

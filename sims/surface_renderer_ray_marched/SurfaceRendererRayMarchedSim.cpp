@@ -87,6 +87,13 @@ public:
         quadMesh->draw(GL_TRIANGLES);
     }
 
+    // Hold 1 (App::kRecenterHoldSeconds): glide back to the view init() framed.
+    void recenterCamera() override
+    {
+        app->camera().easeOrbitTo(glm::vec3(0.0f), 9.0f, 0.0f, 1.57079633f,
+                                  engine::App::kRecenterEaseSeconds);
+    }
+
     void drawUI() override
     {
         ImGui::TextUnformatted("f(x,y,z) =");

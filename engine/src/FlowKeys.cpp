@@ -44,6 +44,42 @@ bool FlowKeys::handle(float& timeScale, bool& reverse, float dt, float maxScale,
     return timeScale != before || reverse != wasReversed;
 }
 
+FlowKeys::TapHold FlowKeys::tapHold(int imguiKey, float dt, float holdSeconds)
+{
+    // per-key: seconds down so far, and this frame's answer (cached by frame number)
+    struct State {
+        float downFor = 0.0f;
+        int frame = -1;
+        TapHold result;
+    };
+    static State states[ImGuiKey_NamedKey_COUNT];
+    const int index = imguiKey - ImGuiKey_NamedKey_BEGIN;
+    if (index < 0 || index >= ImGuiKey_NamedKey_COUNT)
+        return {};
+    State& s = states[index];
+    const int frame = ImGui::GetFrameCount();
+    if (s.frame == frame)
+        return s.result;
+    s.frame = frame;
+
+    TapHold r;
+    const ImGuiKey key = (ImGuiKey)imguiKey;
+    if (ImGui::IsKeyDown(key))
+    {
+        const float before = s.downFor;
+        s.downFor += dt;
+        r.held = before < holdSeconds && s.downFor >= holdSeconds;
+    }
+    else
+    {
+        if (ImGui::IsKeyReleased(key))
+            r.tapped = s.downFor < holdSeconds;
+        s.downFor = 0.0f;
+    }
+    s.result = r;
+    return r;
+}
+
 void FlowKeys::drawStatus(float timeScale, bool reverse, bool playing)
 {
     const ImGuiViewport* vp = ImGui::GetMainViewport();

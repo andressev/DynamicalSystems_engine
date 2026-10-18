@@ -53,3 +53,6 @@ double, for the few points that need exactness (trajectories).
   (step $10^{-3}$), three `hInv` calls per vertex.
 - Trust radius is the [[InvariantManifold]] one: at $C_\pm$ ($\rho=28$) keep
   $r \lesssim 2$; the preview shows `maxRelDefect(r)` for both sides.
+- Naming: the sims' labels write this map as $\tilde h : U \to V$ since 2026-10-18 (the
+  user's preference — the map sends the linear ball to the true one); the code keeps
+  `hInv`/`hInv()` from when it was written as $\tilde h^{-1}$.

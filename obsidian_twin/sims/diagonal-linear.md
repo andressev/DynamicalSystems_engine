@@ -57,12 +57,14 @@ $A$ is diagonal, zero components stay zero, so these curves never leave $E^s$ an
 visibly contract to the origin.
 
 Every single also carries a red **tangent vector** $\dot{x} = Ax$ out of its head
-(`rebuildTangents()`, every frame, constant on-screen size: `length` × camera distance),
+(`rebuildTangents()`, every frame, constant on-screen size: `length` × camera distance, capped at 0.3 `domain radius` so zooming out never grows it past the scene),
 labelled $\dot{x}$ just beyond its tip; when it points up on screen the $\phi^t$ label
 moves below the particle. `camera follows a single` makes the orbit camera track a
 single (newest, or `follow #`): `followCamera()` moves [[Camera]]'s `orbitCenter` and
 `position` together after the integration step, so it never lags; unticking returns to
-the saved centre. Same mechanism as [[vector-field]].
+the saved centre. When the followed single changes the centre slides onto the head:
+attached at once, the offset at that moment decaying with a cubic ease-out over
+`follow ease` (Camera section; 0 = snap). Same mechanism as [[vector-field]].
 
 **Settings persistence.** `settingsTable()` lists every tunable as key → pointer; `Save
 settings` writes it as `key value` lines to `sims/diagonal_linear/settings.txt`
@@ -109,13 +111,13 @@ degenerate one with a center line), readout of $\dim E^s/E^u/E^c$, `show subspac
 (+ `arrows per half-axis`, `subspace arrow size`).
 **Arrows**: `grid N`, `arrow scale`, head solid/barbs + `head length`/`head width`,
 `length by magnitude`, `hide below`, `domain radius`, `arrow alpha`, `alpha gradient`,
-auto/manual color scale.
-**Flow**: Play/Pause (also **Space**, ignored while typing; arrow keys via [[FlowKeys]]), `reverse`, `Restart` (all seeds back to start), `Clear all`,
+auto/manual color scale; `show arrows` is also key **2**; the field fades in/out (0.35 s) rather than cutting.
+**Flow**: Play/Pause (also **Space**, ignored while typing; arrow keys via [[FlowKeys]] — a logarithmic ramp down to $10^{-4}$, a decade per 1.2 s held; `speed` is a logarithmic slider from $10^{-4}$), `reverse`, `Restart` (all seeds back to start), `Clear all` (also key **R**),
 `speed`; ball `center`, `radius`, `particles`, `fill volume`, `single at center` (also drops
 a green single at the ball's centre — labelled, followable, removed with the ball),
-`Drop ball` (replaces the current ball), `Remove ball`; **click the view** for a single trajectory (seeded under the cursor on a camera-facing
+`Drop ball` (also key **B**; **V** drops one with a single at its centre under the cursor, where a click would seed, sized to the view (a fixed fraction of the visible half-height at that depth); V's balls stack up to 3 (`kMaxBalls`), the oldest — with its centre single — going when a fourth is dropped, while B and the button still replace; replaces the current ball), `Remove ball`; **click the view** for a single trajectory (seeded under the cursor on a camera-facing
 plane `click depth` of the way to the orbit center), `tangent vector x'` + `length`,
-`Clear singles`, `camera follows a single` + `newest` / `follow #`;
+`Clear singles`, `camera follows a single` (also a tap of key **1** — switching off this way leaves the camera where it is; holding 1 recenters) + `newest` / `follow #`;
 `circle radius`, `circle particles`, `Spawn circle in E^s` (replaces the previous one),
 `Remove circle`; `show trails`, `trail points`, `trail width`, `trail alpha`,
 `particle size`, `singles thickness`.

@@ -20,8 +20,6 @@ int main()
                        THUMBS_DIR "vector_field.png");
         app.sims().add("diagonal_linear", &makeDiagonalLinearSim,
                        THUMBS_DIR "diagonal_linear.png");
-        app.sims().add("lorenz_manifold", &makeLorenzManifoldSim,
-            THUMBS_DIR "diagonal_linear.png");
         app.sims().add("lorenz_flow", &makeLorenzFlowSim,
                        THUMBS_DIR "lorenz_flow.png");
         app.sims().add("lorenz_equilibrium", &makeLorenzEquilibriumSim,

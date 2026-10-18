@@ -27,6 +27,18 @@ struct FlowKeys {
 
     // One-line hint for the Flow section, next to the play button.
     static constexpr const char* kHint = "(space, arrows)";
+
+    // A key that does one thing on a short tap and another when held: `tapped` is true
+    // on the frame the key is released after less than holdSeconds down, `held` on the
+    // one frame the hold reaches holdSeconds. Call once per frame per key with the
+    // frame's dt (imguiKey is an ImGuiKey); repeated calls in the same frame — App and
+    // the sim asking about the same key — return the same answer without double
+    // counting. Does not look at WantCaptureKeyboard: callers do.
+    struct TapHold {
+        bool tapped = false;
+        bool held = false;
+    };
+    static TapHold tapHold(int imguiKey, float dt, float holdSeconds);
 };
 
 } // namespace engine

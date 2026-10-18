@@ -34,12 +34,23 @@ public:
 
     GLFWwindow* handle() const { return window; }
 
+    // Borderless full screen on the monitor the window sits on (its current video
+    // mode: no mode switch, no title bar, no task bar). The title-bar maximize button
+    // enters it too; leaving it restores the windowed size and position from before.
+    void setFullscreen(bool on);
+    void toggleFullscreen() { setFullscreen(!fullscreenOn); }
+    bool fullscreen() const { return fullscreenOn; }
+
 private:
     GLFWwindow* window = nullptr;
     int fbWidth = 0;
     int fbHeight = 0;
+    bool fullscreenOn = false;
+    bool wantFullscreen = false;   // from the maximize callback, applied in pollEvents
+    int savedX = 0, savedY = 0, savedW = 0, savedH = 0;   // the windowed geometry
 
     static void framebufferSizeCallback(GLFWwindow* window, int width, int height);
+    static void maximizeCallback(GLFWwindow* window, int maximized);
 };
 
 } // namespace engine

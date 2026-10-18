@@ -105,6 +105,8 @@ constexpr int kTaylor = 3;   // singleMethod: Euler, RK2, RK4 (Integrator), then
 
 // ---- settings -------------------------------------------------------------------
 
+constexpr float kMinSpeed = 1e-4f;   // slowest flow (arrow keys ramp to it logarithmically)
+
 struct Settings {
     float sigma = 10.0f;
     float rho = 28.0f;
@@ -117,6 +119,7 @@ struct Settings {
     float eqLabelSize = 30.0f;
     float zoomRadius = 9.0f;      // orbit distance once zoomed onto an equilibrium
     float zoomSeconds = 1.4f;
+    float followSeconds = 0.8f;   // slide onto a newly followed single (0 = snap)
 
     bool showArrows = true;
     bool showAxes = false;
@@ -132,7 +135,7 @@ struct Settings {
     float arrowAlpha = 0.35f;
     float arrowTailAlpha = 0.25f;
 
-    float timeScale = 1.0f;
+    float timeScale = 1.0f;       // flow speed, kMinSpeed..10 on a logarithmic scale
     bool reverse = false;
     int method = 2;               // Integrator::Method, RK4
     float maxStep = 0.005f;
@@ -184,6 +187,7 @@ std::vector<Setting> settingsTable(Settings& s)
         {"showEqLabels", nullptr, nullptr, &s.showEqLabels},
         {"eqLabelSize", &s.eqLabelSize},
         {"zoomRadius", &s.zoomRadius}, {"zoomSeconds", &s.zoomSeconds},
+        {"followSeconds", &s.followSeconds},
         {"showArrows", nullptr, nullptr, &s.showArrows},
         {"showAxes", nullptr, nullptr, &s.showAxes},
         {"barbedHeads", nullptr, nullptr, &s.barbedHeads},
@@ -264,6 +268,7 @@ void loadSettingsFile(Settings& s, const char* path)
     s.gridN = std::clamp(s.gridN, 2, 50);
     s.ballCount = std::clamp(s.ballCount, 1, 1000);
     s.trailPoints = std::clamp(s.trailPoints, 32, 20000);
+    s.timeScale = std::clamp(s.timeScale, kMinSpeed, 10.0f);
     s.domainR = std::clamp(s.domainR, 0.5f, 200.0f);
     s.method = std::clamp(s.method, 0, 2);
     s.systemLatexSize = std::clamp(s.systemLatexSize, 10.0f, 120.0f);
@@ -273,6 +278,7 @@ void loadSettingsFile(Settings& s, const char* path)
     s.maxStep = std::clamp(s.maxStep, 1e-5f, 0.5f);
     s.zoomRadius = std::clamp(s.zoomRadius, 0.5f, 200.0f);
     s.zoomSeconds = std::clamp(s.zoomSeconds, 0.05f, 10.0f);
+    s.followSeconds = std::clamp(s.followSeconds, 0.0f, 10.0f);
 }
 
 // ---- the sim --------------------------------------------------------------------
@@ -365,7 +371,7 @@ public:
         if (!io.WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_Space, false))
             playing = !playing;
         // arrows: Up/Down speed (down to 0), Left reverse, Right forward
-        engine::FlowKeys::handle(cfg.timeScale, cfg.reverse, dt, 10.0f);
+        engine::FlowKeys::handle(cfg.timeScale, cfg.reverse, dt, 10.0f, kMinSpeed);
         engine::FlowKeys::drawStatus(cfg.timeScale, cfg.reverse, playing);
         // Backspace, not Escape: App closes the window on Escape
         if (!io.WantCaptureKeyboard && focused >= 0 &&
@@ -428,6 +434,41 @@ public:
         drawTimeLabels();
         drawEquilibriumTooltip();
 
+        // 1 tapped: camera follows the newest single on/off — detaching leaves the
+        // camera where it is (the checkbox eases back; held past
+        // App::kRecenterHoldSeconds, App calls recenterCamera instead); 2: arrow field
+        if (!io.WantCaptureKeyboard &&
+            (engine::FlowKeys::tapHold(ImGuiKey_1, dt, engine::App::kRecenterHoldSeconds).tapped ||
+             engine::FlowKeys::tapHold(ImGuiKey_Keypad1, dt, engine::App::kRecenterHoldSeconds).tapped))
+        {
+            cfg.followSingle = !cfg.followSingle;
+            detachInPlace = !cfg.followSingle;
+        }
+        if (!io.WantCaptureKeyboard && (ImGui::IsKeyPressed(ImGuiKey_2, false) || ImGui::IsKeyPressed(ImGuiKey_Keypad2, false)))
+            cfg.showArrows = !cfg.showArrows;
+        // the arrow field fades in/out instead of cutting (key 2 or the checkbox)
+        {
+            const float target = cfg.showArrows ? 1.0f : 0.0f;
+            if (arrowsFade < 0.0f)
+                arrowsFade = target; // first frame: no fade from the saved state
+            const float step = dt / kArrowFadeSeconds;
+            arrowsFade += std::clamp(target - arrowsFade, -step, step);
+        }
+        // R: clear every trajectory (same as the "Clear all" button)
+        if (!io.WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_R, false))
+            curves.clear();
+        // B: drop a ball of trajectories (same as the button)
+        if (!io.WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_B, false))
+            dropBall(glm::vec3(cfg.ballCenter[0], cfg.ballCenter[1], cfg.ballCenter[2]),
+                     cfg.ballRadius, cfg.ballWithSingle, true);
+        // V: a ball with a single at its centre, where a click would seed
+        if (!io.WantCaptureKeyboard && !handingOff && ImGui::IsKeyPressed(ImGuiKey_V, false))
+        {
+            glm::vec3 p;
+            if (cursorSeedPoint(p))
+                dropBall(p, viewFitRadius(p), true, false);
+        }
+
         // 0: supersampled screenshot of the scene alone (no panel, no LaTeX labels)
         if (!io.WantCaptureKeyboard &&
             (ImGui::IsKeyPressed(ImGuiKey_0, false) || ImGui::IsKeyPressed(ImGuiKey_Keypad0, false)))
@@ -465,13 +506,13 @@ public:
             axisMesh->draw(GL_LINES);
         }
 
-        if (cfg.showArrows && !glyphs.empty())
+        if (arrowsFade > 0.0f && !glyphs.empty())
         {
             // glyphs blend but never write depth, so they cannot hide a trajectory
             glDepthMask(GL_FALSE);
             shader.setInt("u_useRamp", 1);
             shader.setInt("u_useFade", 1);
-            shader.setFloat("u_alpha", cfg.arrowAlpha * sceneFade);
+            shader.setFloat("u_alpha", cfg.arrowAlpha * sceneFade * arrowsFade);
             shader.setFloat("u_alphaTail", cfg.arrowTailAlpha);
             glLineWidth(1.5f * px);
             glyphs.drawShafts(shader);
@@ -512,6 +553,27 @@ public:
         // halos last: additive light that brightens whatever is around the bead
         renderEquilibria(camera, view, projection, true);
         glDisable(GL_BLEND);
+    }
+
+    // Hold 1 (App::kRecenterHoldSeconds): glide to the global home view, follow off.
+    void recenterCamera() override
+    {
+        cfg.followSingle = false;
+        following = false;
+        followedTraj = nullptr;
+        detachInPlace = false;
+        cfg.camRadius = 0.0f;
+        cfg.camTheta = 0.6f;
+        cfg.camPhi = 1.1f;
+        cfg.camCenter[0] = cfg.camCenter[1] = 0.0f;
+        cfg.camCenter[2] = cfg.domainZ;
+        focused = -1;
+        tween.active = false;
+        handingOff = returning = false;
+        restoreBallSettings();
+        app->camera().easeOrbitTo(glm::vec3(cfg.camCenter[0], cfg.camCenter[1], cfg.camCenter[2]),
+                                  3.0f * cfg.domainR, 0.6f, 1.1f,
+                                  engine::App::kRecenterEaseSeconds);
     }
 
     void drawUI() override
@@ -583,6 +645,7 @@ private:
         glm::vec3 color;
         Kind kind;
         bool withBall = false;   // the single at the ball's centre: goes with it
+        int ball = -1;                 // drop id of the ball it belongs to (-1: none)
     };
 
     // Pieces of the \phi^t(x_0) label, each typeset once and re-composed every frame, so
@@ -698,7 +761,8 @@ private:
         ImGui::SameLine();
         if (ImGui::Button("Clear all"))
             curves.clear();
-        ImGui::SliderFloat("speed", &cfg.timeScale, 0.0f, 10.0f, "%.2f x");
+        ImGui::SliderFloat("speed", &cfg.timeScale, kMinSpeed, 10.0f, "%.4f x",
+                           ImGuiSliderFlags_Logarithmic);
         int diverged = 0;
         for (const Curve& c : curves)
             diverged += c.traj->diverged() ? 1 : 0;
@@ -722,7 +786,8 @@ private:
         ImGui::SameLine();
         ImGui::Checkbox("single at center", &cfg.ballWithSingle);
         if (ImGui::Button("Drop ball"))
-            dropBall();
+            dropBall(glm::vec3(cfg.ballCenter[0], cfg.ballCenter[1], cfg.ballCenter[2]),
+                     cfg.ballRadius, cfg.ballWithSingle, true);
         ImGui::SameLine();
         if (ImGui::Button("Remove ball"))
             removeBall();
@@ -831,19 +896,24 @@ private:
         ImGui::SliderFloat("orbit speed", &cfg.orbitSpeed, 0.1f, 4.0f, "%.2f rad/s");
         ImGui::SliderFloat("zoom speed", &cfg.zoomSpeed, 0.0f, std::max(20.0f, cfg.domainR * 2.0f),
                            cfg.zoomSpeed > 0.0f ? "%.1f /s" : "auto");
+        ImGui::SliderFloat("follow ease", &cfg.followSeconds, 0.0f, 3.0f, "%.2f s");
         if (ImGui::Button("Reset camera"))
-        {
-            cfg.camRadius = 0.0f;
-            cfg.camTheta = 0.6f;
-            cfg.camPhi = 1.1f;
-            cfg.camCenter[0] = cfg.camCenter[1] = 0.0f;
-            cfg.camCenter[2] = cfg.domainZ;
-            focused = -1;
-            tween.active = false;
-            handingOff = returning = false;
-            restoreBallSettings();
-            applyCamera();
-        }
+            resetCamera();
+    }
+
+    // The global home view: camera defaults, no focused bead, no flight in progress.
+    void resetCamera()
+    {
+        cfg.camRadius = 0.0f;
+        cfg.camTheta = 0.6f;
+        cfg.camPhi = 1.1f;
+        cfg.camCenter[0] = cfg.camCenter[1] = 0.0f;
+        cfg.camCenter[2] = cfg.domainZ;
+        focused = -1;
+        tween.active = false;
+        handingOff = returning = false;
+        restoreBallSettings();
+        applyCamera();
     }
 
     // ---- equilibria: picking, glow, labels, zoom ---------------------------------
@@ -998,7 +1068,8 @@ private:
         for (int k = 0; k < 3; ++k)
             cfg.ballCenter[k] = eqs[focused].pos[k];
         cfg.ballRadius = std::min(cfg.ballRadius, 0.5f * cfg.zoomRadius);
-        dropBall();
+        dropBall(glm::vec3(cfg.ballCenter[0], cfg.ballCenter[1], cfg.ballCenter[2]),
+                 cfg.ballRadius, cfg.ballWithSingle, true);
     }
 
     void restoreBallSettings()
@@ -1042,30 +1113,36 @@ private:
         cam.orbitAngularSpeed = cfg.orbitSpeed;
         cam.speed = cfg.zoomSpeed > 0.0f ? cfg.zoomSpeed : std::max(1.0f, 0.5f * cam.orbitRadius);
 
-        // follow a single: ease onto its head when it starts, back to where the camera was
-        // when it stops (a focused bead takes over while zoomed)
+        // follow a single: slide onto its head (below) when it starts or the newest
+        // changes; ease back to where the camera was when it stops (a focused bead takes
+        // over while zoomed)
         const Curve* followed = followedSingle();
         if ((followed != nullptr) != following)
         {
             following = followed != nullptr;
             if (following)
             {
-                followReturn = cam.orbitCenter;
-                startTween(followed->traj->head(), cam.orbitRadius);
+                // started mid-flight (e.g. still easing back out): return to where that
+                // flight was going, and let the slide take over from here
+                followReturn = tween.active ? tween.c1 : cam.orbitCenter;
+                tween.active = false;
+                returning = false;
             }
-            else if (focused < 0)
-                startTween(followReturn, cam.orbitRadius);
+            else
+            {
+                followedTraj = nullptr;
+                if (focused < 0 && !detachInPlace)
+                    startTween(followReturn, cam.orbitRadius);
+                detachInPlace = false;
+            }
         }
 
         if (tween.active)
         {
             tween.t += dt;
             float s = smootherstep(tween.t / tween.duration);
-            // the target may move while we fly (rho dragged, the followed head running):
-            // aim at where it is now
-            glm::vec3 target = focused >= 0 ? eqs[focused].pos
-                             : following    ? followed->traj->head()
-                                            : tween.c1;
+            // the target may move while we fly (rho dragged): aim at where it is now
+            glm::vec3 target = focused >= 0 ? eqs[focused].pos : tween.c1;
             cam.orbitCenter = glm::mix(tween.c0, target, s);
             cam.orbitRadius = tween.r0 * std::pow(tween.r1 / tween.r0, s);
             if (tween.t >= tween.duration)
@@ -1082,7 +1159,23 @@ private:
         }
         else if (following)
         {
-            cam.orbitCenter = followed->traj->head();
+            // attached to the newest head at once; the offset at the moment it changed
+            // decays with a cubic ease-out (same slide as vector_field)
+            glm::vec3 head = followed->traj->head();
+            if (followed->traj.get() != followedTraj)
+            {
+                followedTraj = followed->traj.get();
+                easeOffset = cam.orbitCenter - head;
+                easeT = 0.0f;
+            }
+            if (easeT < cfg.followSeconds)
+            {
+                easeT += dt;
+                float u = 1.0f - std::clamp(easeT / cfg.followSeconds, 0.0f, 1.0f);
+                cam.orbitCenter = head + easeOffset * (u * u * u);
+            }
+            else
+                cam.orbitCenter = head;
         }
         else
             return;
@@ -1315,20 +1408,31 @@ private:
 
     // Under the cursor on a camera-facing plane spawnDepth of the way to the orbit
     // centre, so it lands just in front of you.
-    void dropSingleUnderCursor()
+    // Where a click seeds: under the cursor on a camera-facing plane spawnDepth of the
+    // way to the orbit centre. False when the cursor ray misses that plane.
+    bool cursorSeedPoint(glm::vec3& out) const
     {
         glm::vec3 origin, dir;
         if (!cursorRay(origin, dir))
-            return;
+            return false;
         const engine::Camera& cam = app->camera();
         float denom = glm::dot(dir, cam.front);
         if (std::abs(denom) < 1e-4f)
-            return;
+            return false;
         float toCenter = glm::dot(cam.orbitCenter - cam.position, cam.front);
         glm::vec3 planePoint = cam.position + cam.front * (cfg.spawnDepth * toCenter);
         float s = glm::dot(planePoint - origin, cam.front) / denom;
-        if (s > 0.0f)
-            addTrajectory(origin + dir * s, kSingleColor, Kind::Single);
+        if (s <= 0.0f)
+            return false;
+        out = origin + dir * s;
+        return true;
+    }
+
+    void dropSingleUnderCursor()
+    {
+        glm::vec3 p;
+        if (cursorSeedPoint(p))
+            addTrajectory(p, kSingleColor, Kind::Single);
     }
 
     void addTrajectory(const glm::vec3& seed, const glm::vec3& color, Kind kind)
@@ -1353,13 +1457,26 @@ private:
 
     // One ball at a time; dropping replaces it. Seeds on a Fibonacci sphere (the
     // clearest view of how the flow deforms it) or uniformly through the inside.
-    void dropBall()
+    // Radius for the ball V drops at p: a fixed fraction of the view's half-height at
+    // p's depth, so the fresh ball fits on screen however far in or out you are.
+    float viewFitRadius(const glm::vec3& p) const
     {
-        removeBall();
-        glm::vec3 center(cfg.ballCenter[0], cfg.ballCenter[1], cfg.ballCenter[2]);
+        const engine::Camera& cam = app->camera();
+        float depth = std::max(glm::dot(p - cam.position, cam.front), 1e-3f);
+        return kViewBallFraction * depth * std::tan(glm::radians(0.5f * cam.fovDeg));
+    }
+    static constexpr float kViewBallFraction = 0.12f;
+
+    // replace: the previous ball goes first (B, the button). Otherwise the new ball
+    // joins the others and only the oldest beyond kMaxBalls is retired (V).
+    void dropBall(const glm::vec3& center, float radius, bool withSingle, bool replace)
+    {
+        if (replace)
+            removeBall();
+        const size_t first = curves.size();
         // "single at center": a green single riding the middle of the ball, labelled and
         // followable like any click-dropped one, removed with the ball
-        if (cfg.ballWithSingle)
+        if (withSingle)
         {
             addTrajectory(center, kSingleColor, Kind::Single);
             if (!curves.empty())
@@ -1384,7 +1501,28 @@ private:
                 float phi = golden * (float)k;
                 p = glm::vec3(std::cos(phi) * r, y, std::sin(phi) * r);
             }
-            addTrajectory(center + p * cfg.ballRadius, kBallColor, Kind::Ball);
+            addTrajectory(center + p * radius, kBallColor, Kind::Ball);
+        }
+        const int id = nextBallId++;
+        for (size_t i = first; i < curves.size(); ++i)
+            curves[i].ball = id;
+        if (!replace)
+            trimBalls();
+    }
+
+    // Keep the newest kMaxBalls balls (each with its centre single, if any).
+    void trimBalls()
+    {
+        std::vector<int> ids;
+        for (const Curve& c : curves)
+            if (c.ball >= 0 && std::find(ids.begin(), ids.end(), c.ball) == ids.end())
+                ids.push_back(c.ball);
+        std::sort(ids.begin(), ids.end());
+        while ((int)ids.size() > kMaxBalls)
+        {
+            const int oldest = ids.front();
+            ids.erase(ids.begin());
+            std::erase_if(curves, [oldest](const Curve& c) { return c.ball == oldest; });
         }
     }
 
@@ -1477,7 +1615,15 @@ private:
     bool returning = false;           // zooming out after coming back from it
     float sceneFade = 1.0f;           // currentSceneFade(), this frame
     bool following = false;           // the camera is tracking a single right now
+    bool detachInPlace = false;       // key 1 switched follow off: stay, don't ease back
+    float arrowsFade = -1.0f;         // arrow-field opacity, follows showArrows (-1: unset)
+    static constexpr float kArrowFadeSeconds = 0.35f;
+    static constexpr int kMaxBalls = 3;   // V stacks balls up to this many
+    int nextBallId = 0;
     glm::vec3 followReturn{0.0f};     // orbit centre to ease back to when it stops
+    const engine::Trajectory* followedTraj = nullptr; // identity of the followed single
+    glm::vec3 easeOffset{0.0f};       // orbitCenter - head when the slide began
+    float easeT = 1e9f;               // seconds into the slide (>= followSeconds: locked on)
     engine::TrajectoryRunner runner;  // advances the curves, times integrate/upload/draw
     bool ballMoved = false;           // "Ball here" moved the ball; restored on leaving
     glm::vec3 savedBallCenter{0.0f};

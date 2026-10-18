@@ -27,6 +27,12 @@ Implement the contract in your sim's .cpp:
 - `update(float dt)` — advance math/state.
 - `render(const Camera&)` — issue draw calls using the shared [[Camera]].
 - `drawUI()` — optional ImGui widgets, drawn inside the explorer panel.
+- `recenterCamera()` — optional: the sim's home view (what its Reset camera/view button
+  does). [[App]] calls it when key **1** is held past `App::kRecenterHoldSeconds` (1 s);
+  a tap of 1 stays the sim's own (follow toggle in the flow sims, via
+  [[FlowKeys]] `tapHold`). Every sim implements it so the key works everywhere, and
+  glides there with [[Camera]] `easeOrbitTo` over `App::kRecenterEaseSeconds`
+  ([[vector-field]] R2 has its own view ease) rather than snapping like the button.
 
 Scaffold with the `/new-sim` skill rather than by hand.
 

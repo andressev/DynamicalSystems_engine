@@ -27,8 +27,9 @@ $0 \to 1$ takes about 2 s), proportionally faster above so $10\times$ stays reac
 2. The sim's `speed` slider should start at $0$ so the keys and the slider agree.
    Or pass a `minScale > 0` (5th argument): the ramp becomes logarithmic — every factor
    of 10 takes `kDecadeSeconds` (1.2 s) of holding, either way, clamped to
-   [`minScale`, `maxScale`] — for a sim that needs very slow flows
-   ([[lorenz-equilibrium]]: down to $10^{-4}$, with a logarithmic slider to match).
+   [`minScale`, `maxScale`]. Every flow sim now does this (`kMinSpeed` $= 10^{-4}$,
+   with a logarithmic `speed` slider to match), so slow flows near an equilibrium
+   can be studied anywhere; [[lorenz-equilibrium]] introduced it.
 3. `FlowKeys::kHint` — `"(space, arrows)"`, shown next to the Play button.
 4. `FlowKeys::drawStatus(timeScale, reverse, playing)` right after `handle` — the
    bottom-right readout: speed (`1.00x`, more digits below 0.1 so a slow flow never
@@ -36,6 +37,13 @@ $0 \to 1$ takes about 2 s), proportionally faster above so $10\times$ stays reac
    dimmed while paused. An ImGui overlay, so screenshots leave it out.
 5. Reference sims: [[vector-field]], [[diagonal-linear]], [[lorenz-flow]],
    [[lorenz-equilibrium]].
+
+6. `FlowKeys::tapHold(imguiKey, dt, holdSeconds)` → `{tapped, held}`: one key, two
+   actions — `tapped` on the frame it is released after less than `holdSeconds` down,
+   `held` on the one frame the hold reaches `holdSeconds`. Per-key state inside, cached
+   by frame so [[App]] (hold of **1** → `Sim::recenterCamera`) and the sim (tap of
+   **1** → follow toggle) can both ask in the same frame. Callers check
+   `WantCaptureKeyboard` themselves.
 
 ## Notes
 - Ignored while ImGui has the keyboard (typing in a field, keyboard nav in a panel).

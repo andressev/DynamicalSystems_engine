@@ -51,12 +51,29 @@ public:
 
     void processInput(GLFWwindow* window, float dt);
 
+    // Glide the orbit view to a target over `seconds` instead of snapping: smootherstep,
+    // radius in log space, theta by the shortest way round. App advances it
+    // (updateEase) every frame before processInput; any orbit key press cancels it so
+    // the user is never fought. Sims use it for their recenter (Sim::recenterCamera).
+    void easeOrbitTo(const glm::vec3& center, float radius, float theta, float phi,
+                     float seconds);
+    void updateEase(float dt);
+    void cancelEase() { easeDuration = 0.0f; }
+    bool easing() const { return easeT < easeDuration; }
+
     glm::mat4 getViewMatrix() const;
     glm::mat4 getProjectionMatrix() const;
 
 private:
     void freeMode(GLFWwindow* window, float cameraSpeed);
     void orbitMode(GLFWwindow* window, float dt);
+    void placeOnOrbit(); // position/front from the four orbit values
+
+    // easeOrbitTo state: from (0) and to (1) over easeDuration seconds
+    float easeT = 0.0f, easeDuration = 0.0f;
+    glm::vec3 easeC0{0.0f}, easeC1{0.0f};
+    float easeR0 = 1.0f, easeR1 = 1.0f, easeTh0 = 0.0f, easeTh1 = 0.0f;
+    float easePh0 = 0.0f, easePh1 = 0.0f;
 };
 
 } // namespace engine

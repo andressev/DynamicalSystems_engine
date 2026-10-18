@@ -53,6 +53,9 @@ const glm::vec3 kLinearArrowColor(0.92f, 0.92f, 0.98f);   // A(x - x*) next to f
 const glm::vec3 kPsiColor(1.0f, 0.62f, 0.25f);       // psi^t, the linear flow (orange)
 const glm::vec3 kFlatColor(0.35f, 0.95f, 0.45f);     // phi^t from the same point of E^s (green)
 const glm::vec3 kOnWColor(0.45f, 0.72f, 1.0f);       // phi^t from x* + K_s(theta), on W^s (blue)
+const glm::vec3 kOnWuColor(1.0f, 0.55f, 0.45f);      // W^u, lighter than E^u
+const glm::vec3 kMiniStableColor(0.35f, 0.85f, 1.0f);    // T_{x*} W^s miniature (cyan)
+const glm::vec3 kMiniUnstableColor(1.0f, 0.62f, 0.2f);   // T_{x*} W^u miniature (orange)
 const glm::vec3 kLinkColor(0.85f, 0.85f, 0.92f);     // psi^t <-> phi^t from the same seed, same t
 const glm::vec3 kFormulaColor(1.0f, 0.92f, 0.2f);    // x* + K_s(e^{Lambda t} s)
 // stage C: the linear ball U and its image V = x* + h~^{-1}(U)
@@ -192,13 +195,18 @@ struct Settings {
     bool showLinks = true;
     bool showFormula = false;     // markers at x* + K_s(e^{Lambda t} s)
     int manifoldOrder = 12;       // Taylor order of K_s
-    bool showStageLabels = true;  // phi^t(x_0) / psi^t(theta_0) on every seed's pair
+    bool showStageLabels = true;  // phi^t(x_0) / psi^t(x_0) on every seed's pair
     float stageLabelSize = 30.0f;
 
     // stage C: Hartman-Grobman
     float hgRadius = 1.5f;        // rho of the linear ball U = B_rho(x*)
     int hgPairs = 60;
     float hgGap = 1.0f;           // space between U and V, in units of rho
+    bool showHgSubspaces = true;  // E^s, E^u inside U ("Linear ball U")
+    bool showHgMini = true;       // small E^s, E^u at x* in V, tangent to K(E^s), K(E^u)
+    bool showManifoldsV = false;  // W^s, W^u (x* + K_s(E^s), x* + K_u(E^u)) in V, stages A/B
+    float hgDiskRadius = 0.5f;    // a disk of seeds on a subspace, of rho
+    int hgDiskSeeds = 60;
 
     // "Transform flow": linear trajectories carried from U to V
     float morphSeconds = 3.0f;    // the transformation itself
@@ -214,7 +222,7 @@ struct Settings {
     float waveSeconds = 1.0f;
     bool showHgLinks = true;
     bool showHgLabels = true;     // phi^t(x_0) / psi^t(theta_0) on the pairs
-    bool showHgPredicted = false; // x* + h~^{-1}(psi^t - x*): where the interpolation puts phi^t
+    bool showHgPredicted = false; // also show phi^t, the true flow (yellow), beside h~(psi^t)
 
     bool showArrows = true;
     bool barbedHeads = false;
@@ -288,6 +296,10 @@ std::vector<Setting> settingsTable(Settings& s)
         {"stageLabelSize", &s.stageLabelSize},
         {"hgRadius", &s.hgRadius}, {"hgPairs", nullptr, &s.hgPairs},
         {"hgGap", &s.hgGap},
+        {"showHgSubspaces", nullptr, nullptr, &s.showHgSubspaces},
+        {"showHgMini", nullptr, nullptr, &s.showHgMini},
+        {"showManifoldsV", nullptr, nullptr, &s.showManifoldsV},
+        {"hgDiskRadius", &s.hgDiskRadius}, {"hgDiskSeeds", nullptr, &s.hgDiskSeeds},
         {"morphSeconds", &s.morphSeconds}, {"morphFlowTime", &s.morphFlowTime},
         {"waveIntensity", &s.waveIntensity}, {"waveReach", &s.waveReach},
         {"waveForce", &s.waveForce}, {"waveThickness", &s.waveThickness},
@@ -372,6 +384,8 @@ void loadSettingsFile(Settings& s, const char* path)
     s.hgRadius = std::clamp(s.hgRadius, 0.01f, 50.0f);
     s.hgPairs = std::clamp(s.hgPairs, 1, 400);
     s.hgGap = std::clamp(s.hgGap, 0.0f, 10.0f);
+    s.hgDiskRadius = std::clamp(s.hgDiskRadius, 0.05f, 1.0f);
+    s.hgDiskSeeds = std::clamp(s.hgDiskSeeds, 1, 400);
     s.waveReach = std::clamp(s.waveReach, 0.5f, 180.0f);
     s.waveSeconds = std::clamp(s.waveSeconds, 0.1f, 10.0f);
     s.morphSeconds = std::clamp(s.morphSeconds, 0.2f, 20.0f);
@@ -436,6 +450,10 @@ public:
                                                     std::vector<int>{3, 3, 2});
 
         subspaceMesh = std::make_unique<engine::Mesh>(kSubspaceCapacity, std::vector<int>{3});
+        hgSubspaceMesh = std::make_unique<engine::Mesh>(kSubspaceCapacity, std::vector<int>{3});
+        hgGridMesh = std::make_unique<engine::Mesh>(kGridCapacity, std::vector<int>{3});
+        hgMiniMesh = std::make_unique<engine::Mesh>(kGridCapacity, std::vector<int>{3});
+        manifoldMesh = std::make_unique<engine::Mesh>(kGridCapacity, std::vector<int>{3});
         stageMesh = std::make_unique<engine::Mesh>(kMaxPairs * 3, std::vector<int>{3});
 
         rhs = [this](const double* x, double, double* dxdt) { system.eval(x, dxdt); };
@@ -590,14 +608,19 @@ public:
 
         if (!pairs.empty())
             rebuildStageMesh();
+        updateHgCarry(dt);
         updateHgPairs(dt);
         updateMorph(dt);
         updateBursts(dt);
         updateShards(dt);
 
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.WantCaptureMouse && !leaving &&
-            !hgActive)
-            dropSingleUnderCursor();
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.WantCaptureMouse && !leaving)
+        {
+            if (hgActive)
+                dropHgPairUnderCursor();
+            else
+                dropSingleUnderCursor();
+        }
 
         // content fades in after the handoff, out before handing back
         clock += dt;
@@ -617,22 +640,52 @@ public:
         contentFade = hgFade * (1.0f - hgFocus);   // the usual scene goes black around V
         beadShown += (cfg.beadRadius - beadShown) * (1.0f - std::exp(-3.0f * dt));
 
-        updateCamera();
+        updateCamera(dt);
 
         if (arrowsDirty)
             rebuildArrows();
         if (subspacesDirty)
             rebuildSubspaces();
         if (hgActive && hgArrowsDirty)
+        {
             rebuildHgArrows();
+            rebuildHgSubspaces();
+        }
 
         drawSystemOverlay();
         drawEquilibriumLabel();
         drawSubspaceLabels();
+        drawManifoldLabels();
+        drawMiniLabels();
         drawStageLabels();
         drawHgLabels();
         drawHgPairLabels();
 
+        // 2: arrow field on/off (no follow camera in this sim, so no key 1)
+        if (!io.WantCaptureKeyboard && (ImGui::IsKeyPressed(ImGuiKey_2, false) || ImGui::IsKeyPressed(ImGuiKey_Keypad2, false)))
+            cfg.showArrows = !cfg.showArrows;
+        // the arrow field fades in/out instead of cutting (key 2 or the checkbox)
+        {
+            const float target = cfg.showArrows ? 1.0f : 0.0f;
+            if (arrowsFade < 0.0f)
+                arrowsFade = target; // first frame: no fade from the saved state
+            const float step = dt / kArrowFadeSeconds;
+            arrowsFade += std::clamp(target - arrowsFade, -step, step);
+        }
+        // R: clear every trajectory, the Transform flow's too (same as "Clear all")
+        if (!io.WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_R, false))
+        {
+            curves.clear();
+            pairs.clear();
+            hgPairList.clear();
+            stopMorph();
+        }
+        // B: drop a ball of seeds in V (same as the button)
+        if (!io.WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_B, false))
+            dropSeeds();
+        // T (conjugacy up, pairs on stage): carry the pairs' psi^t over to V / back to U
+        if (!io.WantCaptureKeyboard && hgActive && !hgPairList.empty() && ImGui::IsKeyPressed(ImGuiKey_T, false))
+            hgCarryTarget = !hgCarryTarget;
         if (!io.WantCaptureKeyboard &&
             (ImGui::IsKeyPressed(ImGuiKey_0, false) || ImGui::IsKeyPressed(ImGuiKey_Keypad0, false)))
             takeScreenshot();
@@ -666,12 +719,12 @@ public:
         shader.setVec3("u_clipCenter", xStar);
         shader.setFloat("u_clipRadius", cfg.ballRadius);
 
-        if (cfg.showArrows && !glyphs.empty())
+        if (arrowsFade > 0.0f && !glyphs.empty())
         {
             glDepthMask(GL_FALSE);
             shader.setInt("u_useRamp", 1);
             shader.setInt("u_useFade", 1);
-            shader.setFloat("u_alpha", cfg.arrowAlpha * contentFade);
+            shader.setFloat("u_alpha", cfg.arrowAlpha * contentFade * arrowsFade);
             shader.setFloat("u_alphaTail", cfg.arrowTailAlpha);
             glLineWidth(1.5f * px);
             glyphs.drawShafts(shader);
@@ -696,9 +749,14 @@ public:
             glDepthMask(GL_TRUE);
         }
 
+        // the stage A/B scene: faded by contentFade on the way in, and not drawn at all
+        // once V has the focus (nothing of it belongs in the conjugacy picture)
+        const bool stageScene = contentFade > 0.001f;
         runner.beginDraw();
         for (const Curve& c : curves)
         {
+            if (!stageScene)
+                break;
             float k = c.kind == Kind::Single ? cfg.singleScale : 1.0f;
             if (cfg.showTrails)
             {
@@ -716,15 +774,20 @@ public:
             c.traj->drawHead();
             shader.setInt("u_round", 0);
         }
-        renderStageB(px);
-        renderHgPairs(px);
+        if (stageScene)
+            renderStageB(px);
+        renderHgPairs(view, projection, px);
         renderShards(px);
         renderMorph(view, projection, px);
         runner.endDraw();
         shader.setFloat("u_alpha", 1.0f);
         shader.setFloat("u_clipRadius", 0.0f);   // the subspaces end exactly on the glass
-        if (cfg.showSubspaces)
+        if (cfg.showSubspaces && stageScene)
             renderSubspaces(px);
+        renderHgSubspaces(px);
+        renderManifoldsV(px);
+        renderHgMini(px);
+        renderHgSubspaceCopy(view, projection, px);
         glLineWidth(1.0f);
 
         renderBead(camera, view, projection, true, xStar, 1.0f);
@@ -756,23 +819,28 @@ public:
     {
         drawEquilibriumUI();
         drawSystemUI();
-        drawLinearizationUI();
-        drawStageBUI();
+        if (!hgActive)   // stage A/B settings: not used while the conjugacy is up
+        {
+            drawLinearizationUI();
+            drawStageBUI();
+        }
         drawHartmanGrobmanUI();
+        drawLinearBallUI();
+        drawBallUI();
         drawFlowUI();
-        drawSeedsUI();
+        if (!hgActive)   // seeds in V: not used while the conjugacy is up
+            drawSeedsUI();
 
         ImGui::Spacing();
         ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.36f, 0.30f, 1.0f));
-        bool showOther = ImGui::CollapsingHeader("Other settings (camera, integrator, ball, shockwave, LaTeX, look, arrows, trails, performance)");
+        bool showOther = ImGui::CollapsingHeader("Other settings (camera, integrator, shockwave, LaTeX, look, arrows, trails, performance)");
         ImGui::PopStyleColor();
         if (showOther)
         {
             ImGui::Indent();
             drawViewUI();
             drawIntegratorUI();
-            drawBallUI();
             drawShockwaveUI();
             drawLatexUI();
             drawLookUI();
@@ -817,6 +885,14 @@ private:
     }
 
     enum class Kind { Seed, Single };
+
+    // One piece of a subspace picture (E^s / E^u): a line, a disk or its rim
+    struct SubspaceDraw {
+        GLenum mode;
+        int first, count;
+        glm::vec3 color;
+        bool fill;
+    };
 
     struct Curve {
         std::unique_ptr<engine::Trajectory> traj;
@@ -873,21 +949,28 @@ private:
     void drawBallUI()
     {
         sectionHeader("Ball V");
-        if (ImGui::SliderFloat("radius r", &cfg.ballRadius, 0.1f, 15.0f, "%.2f"))
-            arrowsDirty = subspacesDirty = true;
-        ImGui::Checkbox("glass", &cfg.showGlass);
-        if (cfg.showGlass)
+        if (!hgActive)   // V is h~(U) under the conjugacy: its own radius, glass, W do nothing there
         {
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(140.0f);
-            ImGui::SliderFloat("##glassStrength", &cfg.glassStrength, 0.1f, 2.0f, "strength %.2f");
+            if (ImGui::SliderFloat("radius r", &cfg.ballRadius, 0.1f, 15.0f, "%.2f"))
+                arrowsDirty = subspacesDirty = true;
+            ImGui::Checkbox("glass", &cfg.showGlass);
+            if (cfg.showGlass)
+            {
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(140.0f);
+                ImGui::SliderFloat("##glassStrength", &cfg.glassStrength, 0.1f, 2.0f, "strength %.2f");
+            }
+            ImGui::Checkbox("W^s, W^u", &cfg.showManifoldsV);
         }
         ImGui::SetNextItemWidth(120.0f);
         if (ImGui::InputInt("K_s order", &cfg.manifoldOrder))
         {
             cfg.manifoldOrder = std::clamp(cfg.manifoldOrder, 1, 30);
             buildManifold();
+            subspacesDirty = true;
         }
+        if (ImGui::Button("Camera on V"))
+            aimCamera(-1.0f, 3.2f * (hgActive ? cfg.hgRadius : cfg.ballRadius));
     }
 
     // Sizes of everything typeset: the system, the HUD, the x* label, E^s / E^u.
@@ -973,6 +1056,7 @@ private:
             curves.clear();
             pairs.clear();
             hgPairList.clear();
+            stopMorph();
         }
         ImGui::SliderFloat("speed", &cfg.timeScale, kMinSpeed, 10.0f, "%.4f x",
                            ImGuiSliderFlags_Logarithmic);
@@ -1087,6 +1171,40 @@ private:
         }
     }
 
+    // Hold 1 (App::kRecenterHoldSeconds): glide to the camera defaults around x*.
+    void recenterCamera() override
+    {
+        camAimFrom = camAim;   // back to the pair's midpoint under the conjugacy
+        camAimTo = 0.0f;
+        camAimT = 0.0f;
+        engine::Camera& cam = app->camera();
+        if (hgActive)
+        {
+            // where the Show timeline left the view: the pair framed, in the angles it
+            // opened with
+            cam.easeOrbitTo(cam.orbitCenter, hgPairRadius(), hgSavedTheta, hgSavedPhi,
+                            engine::App::kRecenterEaseSeconds);
+            return;
+        }
+        cfg.camRadius = 0.0f;
+        cfg.camTheta = 0.6f;
+        cfg.camPhi = 1.1f;
+        cam.easeOrbitTo(xStar, 3.0f * cfg.ballRadius, 0.6f, 1.1f, engine::App::kRecenterEaseSeconds);
+    }
+
+    // "Camera on U" / "Camera on V": glide the orbit's center to that ball (aim -1 = V,
+    // +1 = U, 0 = the pair's midpoint — updateCamera owns the center, so the aim is the
+    // sim's) and its distance to `radius`, the angles kept.
+    void aimCamera(float aim, float radius)
+    {
+        camAimFrom = camAim;
+        camAimTo = aim;
+        camAimT = 0.0f;
+        engine::Camera& cam = app->camera();
+        cam.easeOrbitTo(cam.orbitCenter, radius, cam.orbitTheta, cam.orbitPhi,
+                        engine::App::kRecenterEaseSeconds);
+    }
+
     // ---- equilibrium, camera, handoff ---------------------------------------------
 
     // New parameters or a new choice of x*: the field, the point, the arrows.
@@ -1146,22 +1264,252 @@ private:
     void rebuildSubspaces()
     {
         subspacesDirty = false;
-        subspaceDraws.clear();
+        buildSubspaces(cfg.ballRadius, *subspaceMesh, subspaceDraws, subspaceArrows, labelAnchor);
+        // W^s, W^u in V: E^s, E^u through h~^{-1} = K_s + K_u on the CPU, cut where the
+        // parametrization runs away (far outside the glass anyway)
+        manifoldDraws.clear();
+        if (hmOk)
+        {
+            const glm::vec3 colors[2] = {kOnWColor, kOnWuColor};
+            buildSubspaceGrid(cfg.ballRadius, *manifoldMesh, manifoldDraws, colors,
+                              [&](const glm::vec3& theta) {
+                                  auto H = hm.hInv({theta.x, theta.y, theta.z});
+                                  return glm::vec3((float)H[0], (float)H[1], (float)H[2]);
+                              },
+                              1.6f * cfg.ballRadius, manifoldAnchor);
+        }
+    }
+
+    // The same picture inside U (radius rho, around x*: drawn with U's offset), plus the
+    // tessellated copy "Transform subspaces" bends onto K(E^s), K(E^u) and the
+    // miniatures at x* in V.
+    void rebuildHgSubspaces()
+    {
+        hgSubspaceDraws.clear();
+        hgGridDraws.clear();
+        hgMiniDraws.clear();
+        if (!hmOk)
+            return;
+        buildSubspaces(cfg.hgRadius, *hgSubspaceMesh, hgSubspaceDraws, hgSubspaceArrows, hgLabelAnchor);
+        const glm::vec3 colors[2] = {kStableColor, kUnstableColor};
+        auto flat = [](const glm::vec3& theta) { return theta; };
+        buildSubspaceGrid(cfg.hgRadius, *hgGridMesh, hgGridDraws, colors, flat, 0.0f, nullptr);
+        const glm::vec3 miniColors[2] = {kMiniStableColor, kMiniUnstableColor};
+        buildSubspaceGrid(kMiniFraction * cfg.hgRadius, *hgMiniMesh, hgMiniDraws, miniColors, flat, 0.0f,
+                          hgMiniAnchor);
+    }
+
+    // A tessellated E^s / E^u picture of radius r around x*: a plane as rings x segments
+    // of triangles (so a deformation, in the vertex stage or by `map`, bends it) with
+    // its rim, a line as a strip of points. `map` sends theta to the drawn offset from
+    // x* (identity for the flat picture); with maxDist > 0 the rings / the strip stop
+    // where the image leaves that distance of x*.
+    template <class F>
+    void buildSubspaceGrid(float r, engine::Mesh& mesh, std::vector<SubspaceDraw>& draws,
+                           const glm::vec3* colors, F map, float maxDist, glm::vec3* anchors)
+    {
+        draws.clear();
         std::vector<float> v;
         auto vert = [&](const glm::vec3& p) { v.insert(v.end(), {p.x, p.y, p.z}); };
-        const float r = cfg.ballRadius;
+        auto out = [&](const glm::vec3& p) {
+            const float d = glm::length(p);
+            return !std::isfinite(d) || (maxDist > 0.0f && d > maxDist);
+        };
+        constexpr int kRings = 24, kSegs = 96, kLineSteps = 64;
+        for (int side = 0; side < 2; ++side)
+        {
+            const std::vector<glm::vec3> e = subspaceBasis(side == 0 ? -1 : 1);
+            const glm::vec3 color = colors[side];
+            if (anchors)
+                anchors[side] = glm::vec3(NAN);
+            if (e.size() == 1)
+            {
+                for (float dir : {-1.0f, 1.0f})
+                {
+                    const int first = (int)v.size() / 3;
+                    int count = 0;
+                    for (int i = 0; i <= kLineSteps; ++i)
+                    {
+                        const glm::vec3 p = map(dir * r * (float)i / kLineSteps * e[0]);
+                        if (out(p))
+                            break;
+                        vert(xStar + p);
+                        ++count;
+                    }
+                    if (count >= 2)
+                        draws.push_back({GL_LINE_STRIP, first, count, color, false});
+                    if (anchors && dir > 0.0f && count >= 2)
+                        anchors[side] = xStar + map(0.85f * r * (float)(count - 1) / kLineSteps * e[0]);
+                }
+            }
+            else if (e.size() == 2)
+            {
+                auto at = [&](int ring, int k) {
+                    const float a = 6.2831853f * (float)(k % kSegs) / kSegs;
+                    return map(r * (float)ring / kRings * (std::cos(a) * e[0] + std::sin(a) * e[1]));
+                };
+                int rings = kRings;
+                if (maxDist > 0.0f)
+                    for (int ring = 1; ring <= kRings && rings == kRings; ++ring)
+                        for (int k = 0; k < kSegs; ++k)
+                            if (out(at(ring, k)))
+                            {
+                                rings = ring - 1;
+                                break;
+                            }
+                if (rings < 1)
+                    continue;
+                int first = (int)v.size() / 3;
+                for (int ring = 0; ring < rings; ++ring)
+                    for (int k = 0; k < kSegs; ++k)
+                    {
+                        const glm::vec3 p00 = at(ring, k), p01 = at(ring, k + 1);
+                        const glm::vec3 p10 = at(ring + 1, k), p11 = at(ring + 1, k + 1);
+                        vert(xStar + p00);
+                        vert(xStar + p10);
+                        vert(xStar + p11);
+                        vert(xStar + p00);
+                        vert(xStar + p11);
+                        vert(xStar + p01);
+                    }
+                draws.push_back({GL_TRIANGLES, first, rings * kSegs * 6, color, true});
+                first = (int)v.size() / 3;
+                for (int k = 0; k < kSegs; ++k)
+                    vert(xStar + at(rings, k));
+                draws.push_back({GL_LINE_LOOP, first, kSegs, color, false});
+                if (anchors)
+                    anchors[side] = xStar + map(0.92f * r * (float)rings / kRings * glm::normalize(e[0] + e[1]));
+            }
+        }
+        mesh.setVertices(v.data(), std::min(v.size(), (size_t)kGridCapacity * 3));
+    }
+
+    // Lines first (with depth), fills last without depth writes, with `sh` (the usual
+    // program or morph_vertex.glsl's) already set up for the pass.
+    void renderDraws(engine::Shader& sh, engine::Mesh& mesh, const std::vector<SubspaceDraw>& draws,
+                     float fade, float px)
+    {
+        glLineWidth(2.5f * px);
+        for (const SubspaceDraw& d : draws)
+        {
+            if (d.fill)
+                continue;
+            sh.setVec3("u_color", d.color);
+            sh.setFloat("u_alpha", 0.9f * fade);
+            mesh.drawArrays(d.mode, d.count, d.first);
+        }
+        glDepthMask(GL_FALSE);
+        for (const SubspaceDraw& d : draws)
+        {
+            if (!d.fill)
+                continue;
+            sh.setVec3("u_color", d.color);
+            sh.setFloat("u_alpha", cfg.subspaceAlpha * fade);
+            mesh.drawArrays(d.mode, d.count, d.first);
+        }
+        glDepthMask(GL_TRUE);
+        sh.setFloat("u_alpha", 1.0f);
+    }
+
+    // W^s, W^u inside V (stages A/B; gone with the rest of the scene under the conjugacy).
+    void renderManifoldsV(float px)
+    {
+        if (!cfg.showManifoldsV || !hmOk || manifoldDraws.empty() || contentFade < 0.01f)
+            return;
+        shader.setInt("u_useRamp", 0);
+        shader.setInt("u_useFade", 0);
+        shader.setInt("u_shadeMode", 0);
+        shader.setVec3("u_clipCenter", xStar);
+        shader.setFloat("u_clipRadius", cfg.ballRadius);
+        renderDraws(shader, *manifoldMesh, manifoldDraws, contentFade, px);
+        shader.setFloat("u_clipRadius", 0.0f);
+    }
+
+    // The miniatures: E^s, E^u at kMiniFraction rho around x* in V — flat, where the
+    // bent K(E^s), K(E^u) are tangent to them. They appear as the transformed subspaces
+    // settle in V and go with them.
+    float hgMiniFade() const
+    {
+        if (!hgActive || !cfg.showHgMini || hgMiniDraws.empty())
+            return 0.0f;
+        return hgFocus * hgFade * smoothstep(0.8f, 1.0f, hgSubMorphS);
+    }
+
+    void renderHgMini(float px)
+    {
+        const float fade = hgMiniFade();
+        if (fade < 0.01f)
+            return;
+        shader.setInt("u_useRamp", 0);
+        shader.setInt("u_useFade", 0);
+        shader.setInt("u_shadeMode", 0);
+        shader.setVec3("u_offset", glm::vec3(0.0f));
+        shader.setFloat("u_clipRadius", 0.0f);
+        // the glow: an additive halo (wide, whitened lines and a brighter fill) that
+        // breathes slowly, under the usual picture
+        const float pulse = 0.75f + 0.25f * std::sin(3.0f * clock);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        glDepthMask(GL_FALSE);
+        for (const SubspaceDraw& d : hgMiniDraws)
+        {
+            shader.setVec3("u_color", glm::mix(d.color, glm::vec3(1.0f), 0.35f));
+            if (d.fill)
+                shader.setFloat("u_alpha", 0.22f * pulse * fade);
+            else
+            {
+                glLineWidth(8.0f * px);
+                shader.setFloat("u_alpha", 0.3f * pulse * fade);
+            }
+            hgMiniMesh->drawArrays(d.mode, d.count, d.first);
+        }
+        glDepthMask(GL_TRUE);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        renderDraws(shader, *hgMiniMesh, hgMiniDraws, fade, px);
+    }
+
+    // "Transform subspaces": a copy of E^s, E^u in U carried onto K_s(E^s), K_u(E^u) in V
+    // by morph_vertex.glsl (on E^s, h~^{-1} is K_s), the plane tessellated so it bends;
+    // it stays there until the button sends it back.
+    void renderHgSubspaceCopy(const glm::mat4& view, const glm::mat4& projection, float px)
+    {
+        if (!hgActive || !hmOk || hgSubMorphS <= 0.0f || hgGridDraws.empty())
+            return;
+        const float fade = glm::mix(hgSide, hgFocus, hgSubMorphS) * hgFade;
+        if (fade < 0.01f)
+            return;
+        hm.bind();
+        morphShader.use();
+        morphShader.setMat4("view", view);
+        morphShader.setMat4("projection", projection);
+        morphShader.setVec3("u_center", xStar);
+        morphShader.setVec3("u_shift", hgOffset() * (1.0f - hgSubMorphS));
+        morphShader.setFloat("u_morph", hgSubMorphS);
+        morphShader.setInt("u_useRamp", 0);
+        morphShader.setInt("u_round", 0);
+        morphShader.setFloat("u_alphaTail", 1.0f);
+        morphShader.setFloat("u_clipRadius", 0.0f);
+        renderDraws(morphShader, *hgGridMesh, hgGridDraws, fade, px);
+        shader.use();   // the rest of the pass carries on with the usual program
+    }
+
+    void buildSubspaces(float r, engine::Mesh& mesh, std::vector<SubspaceDraw>& draws,
+                        engine::ArrowGlyphs* arrowSets, glm::vec3* anchors)
+    {
+        draws.clear();
+        std::vector<float> v;
+        auto vert = [&](const glm::vec3& p) { v.insert(v.end(), {p.x, p.y, p.z}); };
         constexpr int kSegments = 256;   // as fine as the glass, so the disk rim stays round
 
         for (int side = 0; side < 2; ++side)
         {
             const int sign = side == 0 ? -1 : 1;
             const glm::vec3 color = side == 0 ? kStableColor : kUnstableColor;
-            engine::ArrowGlyphs& arrows = subspaceArrows[side];
+            engine::ArrowGlyphs& arrows = arrowSets[side];
             arrows.clear();
             arrows.headFraction = 0.4f;
             arrows.headWidth = 0.32f;
             std::vector<glm::vec3> e = subspaceBasis(sign);
-            labelAnchor[side] = glm::vec3(NAN);
+            anchors[side] = glm::vec3(NAN);
             dims[side] = (int)e.size();
 
             auto linearAt = [&](const glm::vec3& u) {
@@ -1176,14 +1524,14 @@ private:
                 int first = (int)v.size() / 3;
                 vert(xStar - r * e[0]);
                 vert(xStar + r * e[0]);
-                subspaceDraws.push_back({GL_LINES, first, 2, color, false});
+                draws.push_back({GL_LINES, first, 2, color, false});
                 for (float s : {-1.0f, 1.0f})
                 {
                     glm::vec3 u = s * 0.6f * r * e[0];
                     glm::vec3 d = glm::normalize(linearAt(u));
                     arrows.add(xStar + u - 0.09f * r * d, d, 0.18f * r, 1.0f);
                 }
-                labelAnchor[side] = xStar + 0.85f * r * e[0];
+                anchors[side] = xStar + 0.85f * r * e[0];
             }
             else if (e.size() == 2)
             {
@@ -1198,11 +1546,11 @@ private:
                     vert(rim(k));
                     vert(rim(k + 1));
                 }
-                subspaceDraws.push_back({GL_TRIANGLES, first, kSegments * 3, color, true});
+                draws.push_back({GL_TRIANGLES, first, kSegments * 3, color, true});
                 first = (int)v.size() / 3;
                 for (int k = 0; k < kSegments; ++k)
                     vert(rim(k));
-                subspaceDraws.push_back({GL_LINE_LOOP, first, kSegments, color, false});
+                draws.push_back({GL_LINE_LOOP, first, kSegments, color, false});
                 for (float ring : {0.45f, 0.8f})
                     for (int k = 0; k < 10; ++k)
                     {
@@ -1211,14 +1559,30 @@ private:
                         glm::vec3 d = glm::normalize(linearAt(u));
                         arrows.add(xStar + u - 0.06f * r * d, d, 0.12f * r, 1.0f);
                     }
-                labelAnchor[side] = xStar + 0.92f * r * glm::normalize(e[0] + e[1]);
+                anchors[side] = xStar + 0.92f * r * glm::normalize(e[0] + e[1]);
             }
             arrows.upload();
         }
-        subspaceMesh->setVertices(v.data(), std::min(v.size(), (size_t)kSubspaceCapacity * 3));
+        mesh.setVertices(v.data(), std::min(v.size(), (size_t)kSubspaceCapacity * 3));
     }
 
     void renderSubspaces(float px)
+    {
+        renderSubspaceSet(*subspaceMesh, subspaceDraws, subspaceArrows, contentFade, px);
+    }
+
+    // E^s, E^u inside U: the caller sets u_offset to U's offset.
+    void renderHgSubspaces(float px)
+    {
+        if (!hgActive || !cfg.showHgSubspaces || hgSubspaceDraws.empty() || hgSide < 0.01f)
+            return;
+        shader.setVec3("u_offset", hgOffset());
+        renderSubspaceSet(*hgSubspaceMesh, hgSubspaceDraws, hgSubspaceArrows, hgSide * hgFade, px);
+        shader.setVec3("u_offset", glm::vec3(0.0f));
+    }
+
+    void renderSubspaceSet(engine::Mesh& mesh, const std::vector<SubspaceDraw>& draws,
+                           engine::ArrowGlyphs* arrowSets, float fade, float px)
     {
         shader.setInt("u_useRamp", 0);
         shader.setInt("u_useFade", 0);
@@ -1226,33 +1590,33 @@ private:
         // lines and arrows first (opaque-ish, with depth), the disks last without depth
         // writes so trails show through them
         glLineWidth(2.5f * px);
-        for (const SubspaceDraw& d : subspaceDraws)
+        for (const SubspaceDraw& d : draws)
         {
             if (d.fill)
                 continue;
             shader.setVec3("u_color", d.color);
-            shader.setFloat("u_alpha", 0.9f * contentFade);
-            subspaceMesh->drawArrays(d.mode, d.count, d.first);
+            shader.setFloat("u_alpha", 0.9f * fade);
+            mesh.drawArrays(d.mode, d.count, d.first);
         }
         for (int side = 0; side < 2; ++side)
         {
-            if (subspaceArrows[side].empty())
+            if (arrowSets[side].empty())
                 continue;
             shader.setVec3("u_color", side == 0 ? kStableColor : kUnstableColor);
-            shader.setFloat("u_alpha", 0.95f * contentFade);
-            subspaceArrows[side].drawShafts(shader);
+            shader.setFloat("u_alpha", 0.95f * fade);
+            arrowSets[side].drawShafts(shader);
             shader.setInt("u_shadeMode", 1);
-            subspaceArrows[side].drawHeads(shader);
+            arrowSets[side].drawHeads(shader);
             shader.setInt("u_shadeMode", 0);
         }
         glDepthMask(GL_FALSE);
-        for (const SubspaceDraw& d : subspaceDraws)
+        for (const SubspaceDraw& d : draws)
         {
             if (!d.fill)
                 continue;
             shader.setVec3("u_color", d.color);
-            shader.setFloat("u_alpha", cfg.subspaceAlpha * contentFade);
-            subspaceMesh->drawArrays(d.mode, d.count, d.first);
+            shader.setFloat("u_alpha", cfg.subspaceAlpha * fade);
+            mesh.drawArrays(d.mode, d.count, d.first);
         }
         glDepthMask(GL_TRUE);
         shader.setFloat("u_alpha", 1.0f);
@@ -1261,12 +1625,12 @@ private:
     // E^s / E^u beside their line or disk, in its color.
     void drawSubspaceLabels()
     {
-        if (!cfg.showSubspaces)
+        const bool inV = cfg.showSubspaces && contentFade > 0.01f;
+        const bool inU = hgActive && cfg.showHgSubspaces && !hgSubspaceDraws.empty() && hgSide > 0.01f;
+        if (!inV && !inU)
             return;
         for (int side = 0; side < 2; ++side)
         {
-            if (std::isnan(labelAnchor[side].x))
-                continue;
             if (subspaceLabelTypeset[side] != cfg.subspaceLabelSize)
             {
                 subspaceLabelTypeset[side] = cfg.subspaceLabelSize;
@@ -1274,8 +1638,56 @@ private:
                                         side == 0 ? kStableColor : kUnstableColor);
             }
             float sx, sy;
-            if (toScreen(labelAnchor[side], sx, sy))
+            if (inV && !std::isnan(labelAnchor[side].x) && toScreen(labelAnchor[side], sx, sy))
                 subspaceLabel[side].drawAt(sx + 6.0f, sy - (float)subspaceLabel[side].height(),
+                                           contentFade);
+            if (inU && !std::isnan(hgLabelAnchor[side].x) &&
+                toScreen(hgLabelAnchor[side] + hgOffset(), sx, sy))
+                subspaceLabel[side].drawAt(sx + 6.0f, sy - (float)subspaceLabel[side].height(),
+                                           hgSide * hgFade);
+        }
+    }
+
+    // T_{x*} W^s(x*) / T_{x*} W^u(x*) beside the miniatures, in their colors.
+    void drawMiniLabels()
+    {
+        const float fade = hgMiniFade();
+        if (fade < 0.01f)
+            return;
+        for (int side = 0; side < 2; ++side)
+        {
+            if (std::isnan(hgMiniAnchor[side].x))
+                continue;
+            if (miniLabelTypeset[side] != cfg.subspaceLabelSize)
+            {
+                miniLabelTypeset[side] = cfg.subspaceLabelSize;
+                miniLabel[side].set(side == 0 ? R"(T_{x^*}W^s(x^*))" : R"(T_{x^*}W^u(x^*))",
+                                    cfg.subspaceLabelSize, side == 0 ? kMiniStableColor : kMiniUnstableColor);
+            }
+            float sx, sy;
+            if (toScreen(hgMiniAnchor[side], sx, sy))
+                miniLabel[side].drawAt(sx + 6.0f, sy - (float)miniLabel[side].height(), fade);
+        }
+    }
+
+    // W^s / W^u beside their surface or curve in V, in its color.
+    void drawManifoldLabels()
+    {
+        if (!cfg.showManifoldsV || !hmOk || manifoldDraws.empty() || contentFade < 0.01f)
+            return;
+        for (int side = 0; side < 2; ++side)
+        {
+            if (std::isnan(manifoldAnchor[side].x))
+                continue;
+            if (manifoldLabelTypeset[side] != cfg.subspaceLabelSize)
+            {
+                manifoldLabelTypeset[side] = cfg.subspaceLabelSize;
+                manifoldLabel[side].set(side == 0 ? "W^s" : "W^u", cfg.subspaceLabelSize,
+                                        side == 0 ? kOnWColor : kOnWuColor);
+            }
+            float sx, sy;
+            if (toScreen(manifoldAnchor[side], sx, sy))
+                manifoldLabel[side].drawAt(sx + 6.0f, sy - (float)manifoldLabel[side].height(),
                                            contentFade);
         }
     }
@@ -1494,11 +1906,18 @@ private:
         {
             const engine::Camera& cam = app->camera();
             hgSavedRadius = std::max(cam.orbitRadius, 1e-3f);
+            hgSavedTheta = cam.orbitTheta;   // the view the timeline opens the pair in
+            hgSavedPhi = cam.orbitPhi;
             glm::vec3 right = glm::cross(cam.front, cam.up);
             hgDir = glm::length(right) > 1e-4f ? glm::normalize(right) : glm::vec3(1.0f, 0.0f, 0.0f);
             hgActive = true;
             hgArrowsDirty = true;
+            hgSubMorphTarget = false;   // the subspace copy starts in U
+            hgSubMorphClock = hgSubMorphS = 0.0f;
+            camAim = camAimFrom = camAimTo = 0.0f;   // the timeline frames the pair
+            camAimT = engine::App::kRecenterEaseSeconds;
             seedHgPairs();
+            app->setControlsVisible(false);   // the picture alone; H brings the panel back
         }
     }
 
@@ -1586,8 +2005,17 @@ private:
                     t = 0.0;
                 char num[32];
                 std::snprintf(num, sizeof(num), "%.2f", t);
-                if (inV > 0.01f)
-                    drawFlowLabel(q.tru->head(), g.phi, g.phiChars, g.x0, num, true, headRadius,
+                if (inV > 0.01f && q.alive())
+                {
+                    // the main one: h~(psi^t(theta_0)) over the mapped point
+                    const double* l = q.lin->state();
+                    auto H = hm.hInv({l[0] - xs[0], l[1] - xs[1], l[2] - xs[2]});
+                    const glm::vec3 m((float)(xs[0] + H[0]), (float)(xs[1] + H[1]), (float)(xs[2] + H[2]));
+                    drawFlowLabel(m, g.psi, g.psiChars, g.theta0, num, true, headRadius, inV,
+                                  &g.hOpen, &g.hClose);
+                }
+                if (inV > 0.01f && cfg.showHgPredicted)
+                    drawFlowLabel(q.tru->head(), g.phi, g.phiChars, g.x0, num, false, headRadius,
                                   inV * std::max(q.truFade, 0.0f));
                 if (inU > 0.01f)
                     drawFlowLabel(q.lin->head() + off, g.psi, g.psiChars, g.theta0, num, true,
@@ -1600,7 +2028,7 @@ private:
         if (hInvLabelSize != S)
         {
             hInvLabelSize = S;
-            hInvLabel.set(R"(\tilde h^{-1})", S, glm::vec3(1.0f));   // as in V's label
+            hInvLabel.set(R"(\tilde h)", S, glm::vec3(1.0f));   // as in V's label
         }
         for (const HgPair& q : hgPairList)
         {
@@ -1621,14 +2049,15 @@ private:
     // every trail point and particle travels to V at once — the vertex shader
     // (morph_vertex.glsl) sends theta to x* + shift (1 - s) + mix(theta, h~^{-1}(theta), s)
     // with s eased 0 -> 1 over morphSeconds — turning from orange to green, a ghost of U's
-    // glass deforming into V alongside. They stay in V until the next transform, a
-    // reseed or Hide.
+    // glass deforming into V alongside. They stay in V until the button is pressed again,
+    // which carries them back to U (s 1 -> 0), and so on; a reseed, R / Clear all or
+    // Hide drops them. Always kMorphSeeds particles, whatever `pairs` says.
 
     void startMorph()
     {
         hgPairList.clear();   // the stage is theirs
         morphTrajs.clear();
-        const int n = std::clamp(cfg.hgPairs, 1, kMaxHgPairs);
+        const int n = kMorphSeeds;
         const double R = kMorphSeedFraction * cfg.hgRadius;
         for (int k = 0; k < n; ++k)
         {
@@ -1647,6 +2076,36 @@ private:
     {
         morphTrajs.clear();
         morphPhase = MorphPhase::Off;
+    }
+
+    // The button: a fresh transform when none is up (or one still flowing), otherwise
+    // send the particles the other way — from V back to U or from U to V again, turning
+    // around mid-way if they are travelling (smootherstep is symmetric, so the clock
+    // just flips).
+    void toggleMorph()
+    {
+        switch (morphPhase)
+        {
+        case MorphPhase::Done:
+            morphPhase = MorphPhase::Reversing;
+            morphClock = 0.0f;
+            break;
+        case MorphPhase::InU:
+            morphPhase = MorphPhase::Morphing;
+            morphClock = 0.0f;
+            break;
+        case MorphPhase::Morphing:
+            morphPhase = MorphPhase::Reversing;
+            morphClock = std::max(0.0f, cfg.morphSeconds - morphClock);
+            break;
+        case MorphPhase::Reversing:
+            morphPhase = MorphPhase::Morphing;
+            morphClock = std::max(0.0f, cfg.morphSeconds - morphClock);
+            break;
+        default:
+            startMorph();
+            break;
+        }
     }
 
     void updateMorph(float dt)
@@ -1684,6 +2143,15 @@ private:
                 morphPhase = MorphPhase::Done;
             }
             break;
+        case MorphPhase::Reversing:
+            morphClock += dt;
+            morphS = 1.0f - smootherstep(morphClock / cfg.morphSeconds);
+            if (morphClock >= cfg.morphSeconds)
+            {
+                morphS = 0.0f;
+                morphPhase = MorphPhase::InU;
+            }
+            break;
         default:
             break;
         }
@@ -1696,7 +2164,8 @@ private:
         if (morphPhase == MorphPhase::Off || morphTrajs.empty() || !hmOk)
             return;
         const float k = cfg.singleScale;
-        const float a = hgFade * std::max(hgSide, morphPhase == MorphPhase::Done ? hgFocus : 0.0f);
+        const bool resting = morphPhase == MorphPhase::Done || morphPhase == MorphPhase::InU;
+        const float a = hgFade * std::max(hgSide, resting ? hgFocus : 0.0f);
         if (a < 0.01f)
             return;
         const glm::vec3 off = hgOffset();
@@ -1753,7 +2222,7 @@ private:
     void renderMorphGhost(const engine::Camera& camera, const glm::mat4& view,
                           const glm::mat4& projection)
     {
-        if (morphPhase != MorphPhase::Morphing || !hmOk)
+        if ((morphPhase != MorphPhase::Morphing && morphPhase != MorphPhase::Reversing) || !hmOk)
             return;
         glDepthMask(GL_FALSE);
         hm.bind();
@@ -1916,7 +2385,7 @@ private:
         {
             hgLabelSize = S;
             hgLabelU.set("U", S, kUColor);
-            hgLabelV.set(R"(V = \tilde h^{-1}(U))", S, kVColor);
+            hgLabelV.set(R"(V = \tilde h(U))", S, kVColor);
             // the system each ball holds, between its name and the glass
             hgSystemU.set(R"(\dot\theta = Df(x^*)\,\theta)", 0.85f * S, kUColor);
             hgSystemV.set(R"(\dot x = f(x))", 0.85f * S, kVColor);
@@ -1924,16 +2393,16 @@ private:
         const engine::Camera& cam = app->camera();
         glm::vec3 up = glm::normalize(glm::cross(glm::cross(cam.front, cam.up), cam.front));
         const float lift = 1.12f * cfg.hgRadius;
-        // stacked upward from just above the ball: the system, a gap, the name — in front
-        // of the panels, so the HUD never hides them
+        // stacked upward from just above the ball: the system, a gap, the name — under the
+        // panels like every other label (they never cover the controls)
         auto stack = [&](const glm::vec3& anchor, const engine::LatexImage& name,
                          const engine::LatexImage& system, float alpha) {
             float sx, sy;
             if (alpha < 0.01f || !toScreen(anchor, sx, sy))
                 return;
             const float sysTop = sy - (float)system.height();
-            system.drawAt(sx - 0.5f * system.width(), sysTop, alpha, true);
-            name.drawAt(sx - 0.5f * name.width(), sysTop - 0.35f * S - (float)name.height(), alpha, true);
+            system.drawAt(sx - 0.5f * system.width(), sysTop, alpha);
+            name.drawAt(sx - 0.5f * name.width(), sysTop - 0.35f * S - (float)name.height(), alpha);
         };
         stack(xStar + lift * up, hgLabelV, hgSystemV, hgFocus * hgFade);
         stack(xStar + hgOffset() + lift * up, hgLabelU, hgSystemU, hgSide * hgFade);
@@ -1988,6 +2457,8 @@ private:
     void seedHgPairs()
     {
         hgPairList.clear();
+        hgCarryTarget = false;   // fresh pairs start in U
+        hgCarryClock = hgCarryS = 0.0f;
         if (!hmOk)
             return;
         const int n = std::clamp(cfg.hgPairs, 1, kMaxHgPairs);
@@ -1996,22 +2467,82 @@ private:
         {
             double y = 1.0 - 2.0 * (k + 0.5) / n, rad = std::sqrt(std::max(0.0, 1.0 - y * y));
             double phi = 2.39996323 * k;
-            engine::ConjugacyMap::Vec3 theta = {R * std::cos(phi) * rad, R * y, R * std::sin(phi) * rad};
-            auto H = hm.hInv(theta);
-            HgPair q;
-            // (theta is copied into q.theta0 / q.theta below)
-            for (int c = 0; c < 3; ++c)
-            {
-                q.linSeed[c] = xs[c] + theta[c];
-                q.truSeed[c] = xs[c] + H[c];
-            }
-            q.lin = makeStageTrajectory(q.linSeed);
-            q.tru = makeStageTrajectory(q.truSeed);
-            q.t0 = fieldTime;
-            for (int c = 0; c < 3; ++c)
-                q.theta0[c] = q.theta[c] = theta[c];
-            hgPairList.push_back(std::move(q));
+            seedHgPair({R * std::cos(phi) * rad, R * y, R * std::sin(phi) * rad});
         }
+    }
+
+    // One pair from theta in B_rho: psi^t from x* + theta, phi^t from x* + h~^{-1}(theta).
+    void seedHgPair(const engine::ConjugacyMap::Vec3& theta)
+    {
+        if (!hmOk || (int)hgPairList.size() >= kMaxHgPairs)
+            return;
+        auto H = hm.hInv(theta);
+        HgPair q;
+        for (int c = 0; c < 3; ++c)
+        {
+            q.linSeed[c] = xs[c] + theta[c];
+            q.truSeed[c] = xs[c] + H[c];
+        }
+        q.lin = makeStageTrajectory(q.linSeed);
+        q.tru = makeStageTrajectory(q.truSeed);
+        q.t0 = fieldTime;
+        for (int c = 0; c < 3; ++c)
+            q.theta0[c] = q.theta[c] = theta[c];
+        hgPairList.push_back(std::move(q));
+    }
+
+    // Stage C click: the point under the cursor on the camera-facing plane through each
+    // ball's centre — U at x* + hgOffset(), V at x*. Inside U it is theta itself; inside
+    // V it is x* + h~^{-1}(theta), so theta comes from the forward map. Either way the
+    // pair is seeded at that theta, so the partner appears in the other ball.
+    void dropHgPairUnderCursor()
+    {
+        if (!hmOk)
+            return;
+        glm::vec3 origin, dir;
+        if (!cursorRay(origin, dir))
+            return;
+        const engine::Camera& cam = app->camera();
+        const float denom = glm::dot(dir, cam.front);
+        if (std::abs(denom) < 1e-4f)
+            return;
+        const double rho = cfg.hgRadius;
+        auto onPlane = [&](const glm::vec3& centre, glm::vec3& p) {
+            float s = glm::dot(centre - origin, cam.front) / denom;
+            p = origin + dir * s;
+            return s > 0.0f;
+        };
+
+        glm::vec3 p;
+        if (hgSide > 0.5f && onPlane(xStar + hgOffset(), p))   // U, once it is on screen
+        {
+            glm::vec3 u = p - xStar - hgOffset();
+            if (glm::length(u) < rho)
+            {
+                seedHgPair({u.x, u.y, u.z});
+                return;
+            }
+        }
+        if (onPlane(xStar, p))                                   // V
+        {
+            engine::ConjugacyMap::Vec3 u = {p.x - xs[0], p.y - xs[1], p.z - xs[2]};
+            double theta[3] = {u[0], u[1], u[2]};   // warm start: h~^{-1} ~ identity near x*
+            hgForward(u, theta);
+            if (std::sqrt(theta[0] * theta[0] + theta[1] * theta[1] + theta[2] * theta[2]) < rho)
+                seedHgPair({theta[0], theta[1], theta[2]});
+        }
+    }
+
+    // T's carry: the clock runs towards U or V, s eased like the Transform flow's.
+    void updateHgCarry(float dt)
+    {
+        const float T = std::max(cfg.morphSeconds, 1e-3f);
+        hgCarryClock = hgCarryTarget ? std::min(hgCarryClock + dt, T) : std::max(hgCarryClock - dt, 0.0f);
+        hgCarryS = smootherstep(hgCarryClock / T);
+        // and "Transform subspaces", on the same ease
+        hgSubMorphClock = hgSubMorphTarget ? std::min(hgSubMorphClock + dt, T)
+                                           : std::max(hgSubMorphClock - dt, 0.0f);
+        hgSubMorphS = smootherstep(hgSubMorphClock / T);
     }
 
     // A pair dissolves when psi^t leaves the linear ball U — by the conjugacy phi^t
@@ -2080,25 +2611,22 @@ private:
         }
         std::erase_if(hgPairList, [](const HgPair& q) { return q.linFade <= 0.0f && q.truFade <= 0.0f; });
 
-        std::vector<float> v;
-        hgLinkCount = 0;
-        for (const HgPair& q : hgPairList)
-            if (q.alive())
-            {
-                // psi^t lives in U, drawn shifted beside V: the link spans the gap
-                const glm::vec3 a = q.lin->head() + off, b = q.tru->head();
-                v.insert(v.end(), {a.x, a.y, a.z, 0.0f, b.x, b.y, b.z, 1.0f});
-                ++hgLinkCount;
-            }
-        hgPredictedCount = 0;
+        // the links (psi^t in U -> h~(psi^t) in V) first, then the mapped points
+        std::vector<float> v, mapped;
+        hgLinkCount = hgPredictedCount = 0;
         for (const HgPair& q : hgPairList)
             if (q.alive())
             {
                 const double* l = q.lin->state();
                 auto H = hm.hInv({l[0] - xs[0], l[1] - xs[1], l[2] - xs[2]});
-                v.insert(v.end(), {(float)(xs[0] + H[0]), (float)(xs[1] + H[1]), (float)(xs[2] + H[2]), 0.0f});
+                const glm::vec3 a = q.lin->head() + off;   // psi^t, drawn shifted beside V
+                const glm::vec3 b((float)(xs[0] + H[0]), (float)(xs[1] + H[1]), (float)(xs[2] + H[2]));
+                v.insert(v.end(), {a.x, a.y, a.z, 0.0f, b.x, b.y, b.z, 1.0f});
+                mapped.insert(mapped.end(), {b.x, b.y, b.z, 0.0f});
+                ++hgLinkCount;
                 ++hgPredictedCount;
             }
+        v.insert(v.end(), mapped.begin(), mapped.end());
         hgMesh->setVertices(v.data(), v.size());
 
         std::vector<float> heads;
@@ -2114,6 +2642,55 @@ private:
         }
         if (!heads.empty())
             headMesh->setVertices(heads.data(), heads.size());
+    }
+
+    // T: a ghost of every psi^t (orange turning green, translucent, still flowing — the original stays
+    // in U) on its way from U to V: every vertex through morph_vertex.glsl at
+    // s = hgCarryS, as the Transform flow; the crashed ones' frozen heads travel too.
+    void renderHgGhosts(const glm::mat4& view, const glm::mat4& projection, float px, float a)
+    {
+        a *= kCarryGhostAlpha;
+        if (a < 0.01f)
+            return;
+        const float k = cfg.singleScale;
+        // orange in U, V's green on arrival — the color says how far along it is
+        const glm::vec3 ghostColor = glm::mix(kPsiColor, kFlatColor, hgCarryS);
+        hm.bind();
+        morphShader.use();
+        morphShader.setMat4("view", view);
+        morphShader.setMat4("projection", projection);
+        morphShader.setVec3("u_center", xStar);
+        morphShader.setVec3("u_shift", hgOffset() * (1.0f - hgCarryS));
+        morphShader.setFloat("u_morph", hgCarryS);
+        morphShader.setInt("u_useRamp", 0);
+        morphShader.setFloat("u_alphaTail", 1.0f);
+        morphShader.setFloat("u_clipRadius", 0.0f);
+        for (const HgPair& q : hgPairList)
+        {
+            const float fade = std::max(q.linFade, 0.0f) * a;
+            const float flare = q.linCrashed ? std::max(q.linFade, 0.0f) : 0.0f;
+            const float flash = smoothstep(0.7f, 1.0f, flare);
+            const float headScale = flare > 0.0f ? flare * (1.0f + 1.5f * flash) : 1.0f;
+            if (cfg.showTrails)
+            {
+                glLineWidth(cfg.trailWidth * k * px);
+                morphShader.setVec3("u_color", glm::mix(ghostColor, glm::vec3(1.0f), 0.5f * flash));
+                morphShader.setFloat("u_alpha", cfg.trailAlpha * fade);
+                morphShader.setInt("u_round", 0);
+                q.lin->draw();
+            }
+            morphShader.setVec3("u_color", q.lin->diverged() ? kDivergedColor
+                                                             : glm::mix(ghostColor, glm::vec3(1.0f), 0.8f * flash));
+            morphShader.setFloat("u_alpha", fade);
+            morphShader.setFloat("u_pointSize", cfg.particleSize * k * headScale * px);
+            morphShader.setInt("u_round", 1);
+            if (q.linHead >= 0)
+                headMesh->drawArrays(GL_POINTS, 1, q.linHead);
+            else
+                q.lin->drawHead();
+        }
+        morphShader.setInt("u_round", 0);
+        shader.use();   // the rest of the pass carries on with the usual program
     }
 
     static double norm3(const double* v) { return std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); }
@@ -2135,7 +2712,7 @@ private:
             out[c] = a[c] + hi * (b[c] - a[c]);
     }
 
-    void renderHgPairs(float px)
+    void renderHgPairs(const glm::mat4& view, const glm::mat4& projection, float px)
     {
         if (!hgActive)
             return;
@@ -2143,7 +2720,7 @@ private:
         const glm::vec3 off = hgOffset();
 
         // the two arrow fields: f in V (unclipped: it was sampled inside), A theta in U
-        if (cfg.showArrows && !hgArrowsV.empty())
+        if (arrowsFade > 0.0f && !hgArrowsV.empty())
         {
             glDepthMask(GL_FALSE);
             shader.setFloat("u_magScale", 1.0f / hgMaxMag);
@@ -2159,7 +2736,7 @@ private:
                 shader.setVec3("u_offset", side == 0 ? glm::vec3(0.0f) : off);
                 shader.setVec3("u_clipCenter", xStar + (side == 0 ? glm::vec3(0.0f) : off));
                 shader.setFloat("u_clipRadius", side == 0 ? 0.0f : cfg.hgRadius);
-                shader.setFloat("u_alpha", cfg.arrowAlpha * a);
+                shader.setFloat("u_alpha", cfg.arrowAlpha * a * arrowsFade);
                 shader.setInt("u_useFade", 1);
                 g.drawShafts(shader);
                 shader.setInt("u_useFade", 0);
@@ -2210,11 +2787,12 @@ private:
                 t.drawHead();
             shader.setInt("u_round", 0);
         };
-        // phi^t in V; psi^t in U (shifted, clipped to U's sphere)
+        // phi^t, the true flow, in V (optional, yellow); psi^t in U (shifted, clipped to U's sphere)
         shader.setFloat("u_clipRadius", 0.0f);
-        for (const HgPair& q : hgPairList)
-            curve(*q.tru, kFlatColor, std::max(q.truFade, 0.0f) * inV,
-                  q.truCrashed ? std::max(q.truFade, 0.0f) : 0.0f, q.truHead);
+        if (cfg.showHgPredicted)
+            for (const HgPair& q : hgPairList)
+                curve(*q.tru, kFormulaColor, std::max(q.truFade, 0.0f) * inV,
+                      q.truCrashed ? std::max(q.truFade, 0.0f) : 0.0f, q.truHead);
         shader.setVec3("u_offset", off);
         shader.setVec3("u_clipCenter", xStar + off);
         shader.setFloat("u_clipRadius", cfg.hgRadius);
@@ -2224,6 +2802,8 @@ private:
                   q.linCrashed ? std::max(q.linFade, 0.0f) : 0.0f, q.linHead);
         shader.setVec3("u_offset", glm::vec3(0.0f));
         shader.setFloat("u_clipRadius", 0.0f);
+        if (hgCarryS > 0.0f && hmOk)
+            renderHgGhosts(view, projection, px, glm::mix(inU, inV, hgCarryS));
         if (cfg.showHgLinks && hgLinkCount > 0 && inU > 0.01f)
         {
             // orange at psi^t's end, green at phi^t's
@@ -2237,16 +2817,42 @@ private:
             shader.setInt("u_useRamp", 0);
             shader.setFloat("u_magScale", 1.0f / std::max(sampledMaxMag, 1e-6f));
         }
-        if (cfg.showHgPredicted && hgPredictedCount > 0)
+        // V's main particles: psi^t's trail and head carried over by h~ on the GPU — the
+        // Transform flow's shader at morph 1 with no shift maps every trail point
+        // x* + theta to x* + h~(theta) — in V's green; a crashed pair's trail fades with it
+        if (inV > 0.01f && hmOk)
         {
-            glDisable(GL_DEPTH_TEST);
-            shader.setVec3("u_color", kFormulaColor);
-            shader.setFloat("u_alpha", inV);
-            shader.setFloat("u_pointSize", 0.55f * cfg.particleSize * k * px);
-            shader.setInt("u_round", 1);
-            hgMesh->drawArrays(GL_POINTS, hgPredictedCount, 2 * hgLinkCount);
-            shader.setInt("u_round", 0);
-            glEnable(GL_DEPTH_TEST);
+            hm.bind();
+            morphShader.use();
+            morphShader.setMat4("view", view);
+            morphShader.setMat4("projection", projection);
+            morphShader.setVec3("u_center", xStar);
+            morphShader.setVec3("u_shift", glm::vec3(0.0f));
+            morphShader.setFloat("u_morph", 1.0f);
+            morphShader.setVec3("u_color", kFlatColor);
+            morphShader.setInt("u_useRamp", 0);
+            morphShader.setFloat("u_alphaTail", 1.0f);
+            morphShader.setFloat("u_clipRadius", 0.0f);
+            for (const HgPair& q : hgPairList)
+            {
+                const float fade = std::max(q.linFade, 0.0f) * inV;
+                if (cfg.showTrails)
+                {
+                    glLineWidth(cfg.trailWidth * k * px);
+                    morphShader.setFloat("u_alpha", cfg.trailAlpha * fade);
+                    morphShader.setInt("u_round", 0);
+                    q.lin->draw();
+                }
+                if (q.alive())
+                {
+                    morphShader.setFloat("u_alpha", fade);
+                    morphShader.setFloat("u_pointSize", cfg.particleSize * k * px);
+                    morphShader.setInt("u_round", 1);
+                    q.lin->drawHead();
+                }
+            }
+            morphShader.setInt("u_round", 0);
+            shader.use();   // the rest of the pass carries on with the usual program
         }
         shader.setFloat("u_pointSize", cfg.particleSize * px);
     }
@@ -2270,7 +2876,7 @@ private:
             glassShader.setVec3("u_center", xStar + hgOffset());
             glassShader.setFloat("u_radius", cfg.hgRadius);
             glassShader.setVec3("u_color", kUColor);
-            glassShader.setFloat("u_alpha", 0.9f * hgSide * hgFade);
+            glassShader.setFloat("u_alpha", 0.72f * hgSide * hgFade);
             setWaves(glassShader, 1, view, projection);
             glassMesh->draw(GL_TRIANGLES);
             glassShader.setInt("u_waveCount", 0);
@@ -2285,7 +2891,7 @@ private:
             hmShader.setVec3("u_center", xStar);
             hmShader.setFloat("u_radius", cfg.hgRadius);
             hmShader.setVec3("u_color", hgCheck.level == 2 ? kBadColor : kVColor);
-            hmShader.setFloat("u_alpha", 1.1f * hgFocus * hgFade);
+            hmShader.setFloat("u_alpha", 0.88f * hgFocus * hgFade);
             setWaves(hmShader, 0, view, projection);
             glassMesh->draw(GL_TRIANGLES);
         }
@@ -2321,13 +2927,13 @@ private:
         const glm::vec3 c = hgCheck.level == 0 ? kVColor : hgCheck.level == 1 ? kWarnColor : kBadColor;
         const ImVec4 col(c.r, c.g, c.b, 1.0f);
         if (hgCheck.folds)
-            ImGui::TextColored(col, "too big: h^-1 folds over (det %.2f), not one-to-one", hgCheck.minDet);
+            ImGui::TextColored(col, "too big: h folds over (det %.2f), not one-to-one", hgCheck.minDet);
         else if (hgCheck.level == 2)
             ImGui::TextColored(col, "too big: K_s, K_u off by %.0e here", hgCheck.defect);
         else if (hgCheck.level == 1)
             ImGui::TextColored(col, "approximate: K_s, K_u off by %.0e here", hgCheck.defect);
         else
-            ImGui::TextColored(col, "ok: K_s, K_u exact to %.0e, h^-1 one-to-one", hgCheck.defect);
+            ImGui::TextColored(col, "ok: K_s, K_u exact to %.0e, h one-to-one", hgCheck.defect);
         ImGui::TextDisabled(hgCheck.safeIsMax ? "max radius: %.2f (works beyond)" : "max radius: %.2f",
                             maxRho);
 
@@ -2346,14 +2952,16 @@ private:
         }
         ImGui::SameLine();
         if (ImGui::Button("Transform flow"))
-            startMorph();
+            toggleMorph();
         if (morphPhase != MorphPhase::Off)
         {
             ImGui::SameLine();
-            const char* phase = morphPhase == MorphPhase::Flowing ? "flowing (linear)"
-                              : morphPhase == MorphPhase::Paused  ? "paused"
-                              : morphPhase == MorphPhase::Morphing ? "transforming"
-                                                                   : "in V";
+            const char* phase = morphPhase == MorphPhase::Flowing   ? "flowing (linear)"
+                              : morphPhase == MorphPhase::Paused    ? "paused"
+                              : morphPhase == MorphPhase::Morphing  ? "transforming"
+                              : morphPhase == MorphPhase::Reversing ? "transforming back"
+                              : morphPhase == MorphPhase::InU       ? "in U"
+                                                                    : "in V";
             ImGui::TextDisabled("%s", phase);
         }
         ImGui::SetNextItemWidth(140.0f);
@@ -2363,7 +2971,7 @@ private:
         ImGui::SliderFloat("max flow time", &cfg.morphFlowTime, 0.01f, 20.0f, "%.2f",
                            ImGuiSliderFlags_Logarithmic);
         ImGui::SetNextItemWidth(160.0f);
-        // takes effect on the next Reseed / Transform flow, not by itself
+        // takes effect on the next Reseed, not by itself (the Transform flow ignores it)
         ImGui::SliderInt("pairs", &cfg.hgPairs, 1, kMaxHgPairs);
         auto colored = [](const char* label, bool* v, const glm::vec3& col3) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(col3.r, col3.g, col3.b, 1.0f));
@@ -2372,9 +2980,83 @@ private:
         };
         ImGui::Checkbox("labels##hg", &cfg.showHgLabels);
         ImGui::SameLine();
-        colored("links (h^-1)", &cfg.showHgLinks, kLinkColor);
+        colored("links (h)", &cfg.showHgLinks, kLinkColor);
         ImGui::SameLine();
-        colored("h^-1(psi^t)", &cfg.showHgPredicted, kFormulaColor);
+        colored("phi^t (true flow)", &cfg.showHgPredicted, kFormulaColor);
+    }
+
+    // "Linear ball U", only while the conjugacy is up: E^s, E^u inside U and disks of
+    // pairs seeded right on them (a segment when the subspace is a line, a ball when it
+    // is all of R^3).
+    void drawLinearBallUI()
+    {
+        if (!hgActive || !hmOk)
+            return;
+        sectionHeader("Linear ball U");
+        ImGui::Checkbox("E^s, E^u##U", &cfg.showHgSubspaces);
+        ImGui::SetNextItemWidth(140.0f);
+        ImGui::SliderFloat("disk radius", &cfg.hgDiskRadius, 0.05f, 1.0f, "%.2f rho");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(140.0f);
+        ImGui::SliderInt("disk seeds", &cfg.hgDiskSeeds, 1, kMaxHgPairs);
+        for (int side = 0; side < 2; ++side)
+        {
+            if (dims[side] == 0)
+                continue;
+            if (side == 1 && dims[0] > 0)
+                ImGui::SameLine();
+            const glm::vec3& c = side == 0 ? kStableColor : kUnstableColor;
+            const char* what = dims[side] == 1 ? "Segment" : dims[side] == 2 ? "Disk" : "Ball";
+            char label[32];
+            std::snprintf(label, sizeof(label), "%s on E^%c", what, side == 0 ? 's' : 'u');
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(c.r, c.g, c.b, 1.0f));
+            const bool pressed = ImGui::Button(label);
+            ImGui::PopStyleColor();
+            if (pressed)
+                seedHgDisk(side);
+        }
+        if (ImGui::Button("Transform subspaces"))
+            hgSubMorphTarget = !hgSubMorphTarget;
+        ImGui::SameLine();
+        ImGui::Checkbox("tangent miniatures", &cfg.showHgMini);
+        if (ImGui::Button("Camera on U"))
+            aimCamera(1.0f, 3.2f * cfg.hgRadius);
+    }
+
+    // Pairs seeded on E^s (side 0) or E^u (side 1) inside U, hgDiskRadius * rho around
+    // x*: evenly along the line, a sunflower over the disk, a spiral through the ball.
+    // Added to the pairs on stage (Reseed or R to start over).
+    void seedHgDisk(int side)
+    {
+        if (!hmOk)
+            return;
+        stopMorph();
+        const std::vector<glm::vec3> e = subspaceBasis(side == 0 ? -1 : 1);
+        const double R = cfg.hgDiskRadius * cfg.hgRadius;
+        const int n = std::clamp(cfg.hgDiskSeeds, 1, kMaxHgPairs);
+        constexpr double kGolden = 2.39996323;
+        for (int k = 0; k < n; ++k)
+        {
+            glm::dvec3 theta(0.0);
+            if (e.size() == 1)
+                theta = R * (n == 1 ? 1.0 : -1.0 + 2.0 * (k + 0.5) / n) * glm::dvec3(e[0]);
+            else if (e.size() == 2)
+            {
+                const double r = R * std::sqrt((k + 0.5) / n), a = kGolden * k;
+                theta = r * (std::cos(a) * glm::dvec3(e[0]) + std::sin(a) * glm::dvec3(e[1]));
+            }
+            else if (e.size() == 3)
+            {
+                const double r = R * std::cbrt((k + 0.5) / n);
+                const double y = 1.0 - 2.0 * (k + 0.5) / n, rad = std::sqrt(std::max(0.0, 1.0 - y * y));
+                const double a = kGolden * k;
+                theta = r * (std::cos(a) * rad * glm::dvec3(e[0]) + y * glm::dvec3(e[1]) +
+                             std::sin(a) * rad * glm::dvec3(e[2]));
+            }
+            else
+                return;
+            seedHgPair({theta.x, theta.y, theta.z});
+        }
     }
 
     std::unique_ptr<engine::Trajectory> makeStageTrajectory(const double* seed) const
@@ -2459,8 +3141,8 @@ private:
             if (cfg.showFlat)
                 drawFlowLabel(q.flat->head(), g.phi, g.phiChars, g.x0, num, true, headRadius,
                               contentFade);
-            if (cfg.showPsi)
-                drawFlowLabel(q.lin->head(), g.psi, g.psiChars, g.theta0, num, false, headRadius,
+            if (cfg.showPsi)   // same seed x_0 as phi^t here (theta_0 is stage C's, in U)
+                drawFlowLabel(q.lin->head(), g.psi, g.psiChars, g.x0Psi, num, false, headRadius,
                               contentFade);
         }
     }
@@ -2477,6 +3159,9 @@ private:
             g.x0.set(R"((x_0))", S, kFlatColor);
             g.psi.set(R"(\psi)", S, kPsiColor);
             g.theta0.set(R"((\theta_0))", S, kPsiColor);
+            g.x0Psi.set(R"((x_0))", S, kPsiColor);
+            g.hOpen.set(R"(\tilde h()", S, kFlatColor);
+            g.hClose.set(R"())", S, kFlatColor);
             for (int i = 0; i < 12; ++i)
             {
                 char ch = kTimeLabelChars[i];
@@ -2490,7 +3175,9 @@ private:
     // symbol^{t}(seed) centred over (above = true) or under a head.
     void drawFlowLabel(const glm::vec3& head, const engine::LatexImage& symbol,
                        const engine::LatexImage* chars, const engine::LatexImage& seed,
-                       const char* num, bool above, float headRadius, float alpha)
+                       const char* num, bool above, float headRadius, float alpha,
+                       const engine::LatexImage* prefix = nullptr,
+                       const engine::LatexImage* suffix = nullptr)
     {
         float sx, sy;
         if (!toScreen(head, sx, sy))
@@ -2509,13 +3196,17 @@ private:
             ++n;
             x += img.advance();
         };
+        if (prefix)
+            place(*prefix, 0.0f);
         place(symbol, 0.0f);
         x += 0.04f * S;
-        for (const char* c = num; *c && n < 38; ++c)
+        for (const char* c = num; *c && n < 36; ++c)
             if (const char* at = std::strchr(kTimeLabelChars, *c))
                 place(chars[at - kTimeLabelChars], raise);
         x += 0.06f * S;
         place(seed, 0.0f);
+        if (suffix)
+            place(*suffix, 0.0f);
         float left = sx - 0.5f * x;
         float baseY = above ? sy - headRadius - 0.35f * S : sy + headRadius + 1.05f * S;
         for (int i = 0; i < n; ++i)
@@ -2585,22 +3276,33 @@ private:
 
     // The orbit stays centred on x* (it moves when rho is dragged). Runs after
     // Camera::processInput, so position/front are recomputed for this frame.
-    void updateCamera()
+    // The distance that frames U and V together: where the Show timeline ends.
+    float hgPairRadius() const
+    {
+        const engine::Camera& cam = app->camera();
+        const float half = std::tan(glm::radians(0.5f * cam.fovDeg));
+        const float span = 0.5f * glm::length(hgOffset()) + 1.3f * cfg.hgRadius;
+        return 1.15f * std::max(span / (half * std::max(cam.aspect, 0.2f)), 1.9f * cfg.hgRadius / half);
+    }
+
+    void updateCamera(float dt)
     {
         engine::Camera& cam = app->camera();
         cam.orbitAngularSpeed = cfg.orbitSpeed;
         cam.speed = cfg.zoomSpeed > 0.0f ? cfg.zoomSpeed : std::max(0.3f, 0.5f * cam.orbitRadius);
-        // the pair's midpoint, raised a little so the names + systems above the balls fit
+        // the aim glides on the recenter's ease
+        camAimT = std::min(camAimT + dt, engine::App::kRecenterEaseSeconds);
+        camAim = glm::mix(camAimFrom, camAimTo, smootherstep(camAimT / engine::App::kRecenterEaseSeconds));
+        // the pair's midpoint (or the ball aimed at), raised a little so the names +
+        // systems above the balls fit
         const glm::vec3 camUp = glm::normalize(glm::cross(glm::cross(cam.front, cam.up), cam.front));
-        cam.orbitCenter = xStar + 0.5f * hgSide * hgOffset() + hgFocus * 0.45f * cfg.hgRadius * camUp;
+        cam.orbitCenter = xStar + (0.5f + 0.5f * camAim) * hgSide * hgOffset() +
+                          hgFocus * 0.45f * cfg.hgRadius * (1.0f - std::abs(camAim)) * camUp;
         if (hgAnimating)
         {
             // log-interpolated: saved distance -> framing V -> framing U and V together
             float rV = 3.2f * cfg.hgRadius;
-            float half = std::tan(glm::radians(0.5f * cam.fovDeg));
-            float span = 0.5f * glm::length(hgOffset()) + 1.3f * cfg.hgRadius;
-            float rBoth = 1.15f * std::max(span / (half * std::max(cam.aspect, 0.2f)),
-                                           1.9f * cfg.hgRadius / half);
+            float rBoth = hgPairRadius();
             float l = std::log(hgSavedRadius) +
                       hgFocus * (std::log(rV) - std::log(hgSavedRadius)) +
                       hgSide * (std::log(rBoth) - std::log(rV));
@@ -2683,6 +3385,18 @@ private:
         float sx, sy;
         if (toScreen(xStar, sx, sy))
             label.drawAt(sx + 10.0f + 0.3f * cfg.eqLabelSize, sy - (float)label.height() - 2.0f);
+        // and U's center, the origin of the linear coordinates: 0 bar
+        const float inU = hgActive ? hgSide * hgFade : 0.0f;
+        if (inU < 0.01f)
+            return;
+        if (originLabelSize != cfg.eqLabelSize)
+        {
+            originLabelSize = cfg.eqLabelSize;
+            originLabel.set(R"(\bar{0})", cfg.eqLabelSize, glm::vec3(1.0f, 0.45f, 0.40f));
+        }
+        if (toScreen(xStar + hgOffset(), sx, sy))
+            originLabel.drawAt(sx + 10.0f + 0.3f * cfg.eqLabelSize, sy - (float)originLabel.height() - 2.0f,
+                               inU);
     }
 
     // The system with its live parameters, top-right (as in lorenz_flow).
@@ -2904,12 +3618,18 @@ private:
     static constexpr size_t kMaxTrajectories = 4000;
     static constexpr int kMaxPairs = 64;    // stage B ring seeds
     static constexpr int kMaxHgPairs = 400; // stage C
+    static constexpr int kMorphSeeds = 400; // "Transform flow" particles, always
+    static constexpr float kCarryGhostAlpha = 0.55f;   // T's travelling ghost, of psi^t's opacity
     static constexpr int kSubspaceCapacity = 2048;   // vertices: a disk + rim (4 x 256) + lines
+    static constexpr int kGridCapacity = 16384;      // a tessellated disk (24 x 96 x 6) + rim + lines
+    static constexpr float kMiniFraction = 0.3f;     // the miniatures' radius, of rho
 
     // Pieces of the stage B labels, typeset once per size.
     struct StageLabelGlyphs {
         float size = 0.0f;
         engine::LatexImage phi, x0, psi, theta0;
+        engine::LatexImage x0Psi;   // "(x_0)" in psi's color: stage B's psi^t starts at x_0 too
+        engine::LatexImage hOpen, hClose;   // "\tilde h(" ... ")" around psi^t(theta_0), in V's green
         engine::LatexImage phiChars[12], psiChars[12];   // superscript t, kTimeLabelChars order
     };
     static constexpr const char* kTimeLabelChars = "0123456789.-";
@@ -2969,13 +3689,6 @@ private:
         std::unique_ptr<engine::Trajectory> lin, flat, onW;
     };
 
-    struct SubspaceDraw {
-        GLenum mode;
-        int first, count;
-        glm::vec3 color;
-        bool fill;
-    };
-
     engine::App* app = nullptr;
     engine::Shader shader;        // glyphs + trails, clipped to V
     engine::Shader eqShader;      // the bead at x* + its halo
@@ -2987,6 +3700,26 @@ private:
     std::unique_ptr<engine::Mesh> subspaceMesh;
     std::vector<SubspaceDraw> subspaceDraws;
     engine::ArrowGlyphs subspaceArrows[2];      // E^s, E^u: the linear flow on them
+    std::unique_ptr<engine::Mesh> hgSubspaceMesh;   // the same inside U (radius rho)
+    std::vector<SubspaceDraw> hgSubspaceDraws;
+    engine::ArrowGlyphs hgSubspaceArrows[2];
+    glm::vec3 hgLabelAnchor[2]{glm::vec3(NAN), glm::vec3(NAN)};
+    std::unique_ptr<engine::Mesh> hgGridMesh;       // tessellated E^s, E^u in U: "Transform subspaces"
+    std::vector<SubspaceDraw> hgGridDraws;
+    std::unique_ptr<engine::Mesh> hgMiniMesh;       // the miniatures at x* in V
+    std::vector<SubspaceDraw> hgMiniDraws;
+    glm::vec3 hgMiniAnchor[2]{glm::vec3(NAN), glm::vec3(NAN)};
+    engine::LatexImage miniLabel[2];
+    float miniLabelTypeset[2] = {0.0f, 0.0f};
+    engine::LatexImage originLabel;                 // 0 bar at U's center
+    float originLabelSize = 0.0f;
+    std::unique_ptr<engine::Mesh> manifoldMesh;     // W^s, W^u in V (stages A/B)
+    std::vector<SubspaceDraw> manifoldDraws;
+    glm::vec3 manifoldAnchor[2]{glm::vec3(NAN), glm::vec3(NAN)};
+    engine::LatexImage manifoldLabel[2];
+    float manifoldLabelTypeset[2] = {0.0f, 0.0f};
+    bool hgSubMorphTarget = false;                  // "Transform subspaces": true = towards V
+    float hgSubMorphClock = 0.0f, hgSubMorphS = 0.0f;
     engine::LatexImage subspaceLabel[2];
     float subspaceLabelTypeset[2] = {0.0f, 0.0f};   // size each was typeset at
     glm::vec3 labelAnchor[2]{glm::vec3(NAN), glm::vec3(NAN)};
@@ -3025,6 +3758,11 @@ private:
     float hgFade = 1.0f;                        // handoff fades only
     glm::vec3 hgDir{1.0f, 0.0f, 0.0f};          // V -> U, screen-right when Show was pressed
     float hgSavedRadius = 9.0f;                 // camera distance to return to
+    float hgSavedTheta = 0.6f, hgSavedPhi = 1.1f;   // the angles Show opened the pair in
+    // "Camera on U" / "Camera on V": where the orbit center sits between the balls,
+    // -1 = V, 0 = midpoint, +1 = U, eased from camAimFrom to camAimTo
+    float camAim = 0.0f, camAimFrom = 0.0f, camAimTo = 0.0f;
+    float camAimT = engine::App::kRecenterEaseSeconds;
     engine::ArrowGlyphs hgArrowsU, hgArrowsV;
     float hgMaxMag = 1.0f;
     bool hgArrowsDirty = true;
@@ -3035,12 +3773,13 @@ private:
     std::vector<Burst> bursts;
     engine::FrameCopy sceneCopy;                // the frame so far, for the shockwaves
 
-    enum class MorphPhase { Off, Flowing, Paused, Morphing, Done };
+    // Done = resting in V, InU = carried back and resting in U (the button alternates)
+    enum class MorphPhase { Off, Flowing, Paused, Morphing, Done, Reversing, InU };
     MorphPhase morphPhase = MorphPhase::Off;
     std::vector<std::unique_ptr<engine::Trajectory>> morphTrajs;   // the linear flow carried over
     double morphOde = 0.0;                      // ODE time flowed so far
     float morphClock = 0.0f;                    // seconds in the current phase
-    float morphS = 0.0f;                        // 0 in U -> 1 in V
+    float morphS = 0.0f;                        // 0 in U <-> 1 in V
     engine::Shader morphShader;                 // morph_vertex.glsl + fragment.glsl
     std::vector<ShardGroup> shardGroups;
     std::unique_ptr<engine::Mesh> shardMesh;
@@ -3049,6 +3788,11 @@ private:
     std::vector<HgPair> hgPairList;
     std::unique_ptr<engine::Mesh> hgMesh;       // links + predicted points
     int hgLinkCount = 0, hgPredictedCount = 0;
+    // T: a ghost of the pairs' psi^t trails carried from U onto V (and back) while they
+    // keep flowing — morph_vertex.glsl as in the Transform flow, s eased over morphSeconds
+    bool hgCarryTarget = false;                 // true = towards V
+    float hgCarryClock = 0.0f;                  // 0 .. cfg.morphSeconds
+    float hgCarryS = 0.0f;                      // 0 in U -> 1 in V
     HgCheck hgCheck;
     bool hgCheckDirty = true;
     engine::Eigen3 eig;
@@ -3059,6 +3803,8 @@ private:
     engine::Integrator singleIntegrator;   // singles, unless they use the Taylor method
     engine::TaylorIntegrator taylor;
     engine::TaylorIntegrator::Jet jet;     // LorenzSystem::jet
+    float arrowsFade = -1.0f;         // arrow-field opacity, follows showArrows (-1: unset)
+    static constexpr float kArrowFadeSeconds = 0.35f;
     engine::TrajectoryRunner runner;
     std::vector<Curve> curves;
     double fieldTime = 0.0;
