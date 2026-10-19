@@ -188,7 +188,7 @@ not hyperbolic / no saddle → the section says why and offers nothing.
   leaves it there (press again to bring it back; Show resets it). **tangent
   miniatures**: flat $E^s$, $E^u$ of radius $0.3\rho$ at $x^*$ in $V$, the planes the
   bent copies are tangent to, labelled $T_{x^*}W^s(x^*)$ (cyan) and $T_{x^*}W^u(x^*)$
-  (orange) — fading in as the copies settle in $V$, gone when they return, with a
+  (orange) — shown whenever the checkbox is on, transformed subspaces or not, with a
   breathing additive halo so they read against the bent surfaces (`hgGridMesh`,
   `hgMiniMesh`, `renderHgSubspaceCopy`, `renderHgMini`, `drawMiniLabels`).
 - **W^s, W^u** (Ball V, stages A/B only): $x^* + \tilde h(E^s \cap B_r)$

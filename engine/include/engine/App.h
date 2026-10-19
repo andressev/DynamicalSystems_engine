@@ -65,12 +65,13 @@ public:
     // The Explorer panel (App's FPS/menu row + the sim's drawUI). H toggles it; a sim
     // may hide it itself (e.g. when it starts a presentation-like animation). A hidden
     // panel also pulls in by itself when the mouse reaches the top-left corner of the
-    // window and goes again once the mouse leaves it or rests for kPanelIdleSeconds.
+    // window and goes again the moment the mouse leaves it. It fades in and out over
+    // kPanelFadeSeconds either way.
     bool controlsVisible() const { return showControls; }
     void setControlsVisible(bool on) { showControls = on; controlsAuto = false; }
     static constexpr float kPanelHotCorner = 48.0f;   // px from the top-left corner
-    static constexpr float kPanelIdleSeconds = 3.0f;
-    static constexpr float kPanelLeaveSeconds = 0.6f; // grace once the mouse is off it
+    static constexpr float kPanelFadeSeconds = 0.2f;
+    static constexpr float kPanelMargin = 6.0f;       // px around the panel still "on" it
 
 private:
     // GL texture for one menu tile, loaded from SimRegistry's thumbnailPath
@@ -92,13 +93,15 @@ private:
     Handoff handoffValues;  // what the active sim was handed
     float captureScale = 1.0f;
     bool showControls = true; // the Explorer panel (sim controls); H toggles it
-    bool controlsAuto = false;   // shown by the hot corner: hides on leave / idle
+    bool controlsAuto = false;   // shown by the hot corner: hides as the mouse leaves
     bool controlsHovered = false; // the panel under the mouse last frame (drawAppUI)
     bool uncollapseControls = false; // open the panel on the next drawAppUI
-    float mouseIdle = 0.0f;       // seconds the mouse has not moved
-    float mouseAway = 0.0f;       // seconds the mouse has been off the auto panel
+    bool panelEntered = false;    // the mouse has reached the auto panel since the pull
+    float panelFade = 1.0f;       // 0 hidden -> 1 shown, eased toward showControls
+    float panelX = 0.0f, panelY = 0.0f, panelW = 0.0f, panelH = 0.0f;   // its rect (drawAppUI)
     float lastMouseX = -1.0f, lastMouseY = -1.0f;
     void updateAutoPanel(float dt);
+    bool onPanel(float mx, float my) const;   // inside the rect, kPanelMargin around it
 
     void switchTo(int index);
     void loadThumbnails();

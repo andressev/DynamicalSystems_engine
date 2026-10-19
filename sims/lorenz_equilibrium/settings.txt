@@ -23,7 +23,7 @@ showFlat 1
 showOnW 0
 showLinks 1
 showFormula 0
-manifoldOrder 12
+manifoldOrder 20
 showStageLabels 1
 stageLabelSize 30
 hgRadius 11.9965
@@ -43,8 +43,8 @@ waveThickness 0.075
 waveFeather 0.265
 waveAberration 0.02
 waveSeconds 1
-showHgLinks 0
-showHgLabels 0
+showHgLinks 1
+showHgLabels 1
 showHgPredicted 0
 showArrows 1
 barbedHeads 0
@@ -74,6 +74,6 @@ trailAlpha 0.8
 particleSize 6
 cameraTheta -14.0816
 cameraPhi 1.2243
-cameraRadius 58.1913
+cameraRadius 50.3533
 orbitSpeed 1.2
 zoomSpeed 0

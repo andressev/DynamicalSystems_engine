@@ -60,10 +60,12 @@ Sims use the `App&` handed to `init`:
   `controlsVisible()` / `setControlsVisible(bool)` (e.g. [[lorenz-equilibrium]] hides it
   when Show conjugacy starts the timeline). A hidden panel also pulls in by itself
   when the mouse reaches the window's top-left corner (`kPanelHotCorner`, 48 px,
-  opened uncollapsed) and goes again once the mouse has been off it for
-  `kPanelLeaveSeconds` (0.6 s) or still for `kPanelIdleSeconds` (3 s) —
-  `updateAutoPanel`, before the sim's update; a panel shown with H or by the sim stays
-  (`controlsAuto`). Only the panel: overlays
+  opened uncollapsed) and goes again the moment the mouse is off it (`kPanelMargin`
+  around its rect; a dragged slider / open popup keep it; the stretch between corner
+  and panel counts until the mouse first reaches it) — `updateAutoPanel`, before the
+  sim's update; a panel shown with H or by the sim stays (`controlsAuto`). Shown or
+  hidden by any route it fades over `kPanelFadeSeconds` (0.2 s, `panelFade` as the
+  window's style alpha; it is still drawn while fading out). Only the panel: overlays
   a sim draws itself ([[FlowKeys]] status, LaTeX HUD) stay. A hidden panel skips
   `drawUI` entirely, so sims must not depend on it running every frame.
 - Screenshot PNGs are written by a tiny encoder in `App.cpp` (stored deflate blocks, no

@@ -1426,13 +1426,12 @@ private:
     }
 
     // The miniatures: E^s, E^u at kMiniFraction rho around x* in V — flat, where the
-    // bent K(E^s), K(E^u) are tangent to them. They appear as the transformed subspaces
-    // settle in V and go with them.
+    // bent K(E^s), K(E^u) are tangent to them.
     float hgMiniFade() const
     {
         if (!hgActive || !cfg.showHgMini || hgMiniDraws.empty())
             return 0.0f;
-        return hgFocus * hgFade * smoothstep(0.8f, 1.0f, hgSubMorphS);
+        return hgFocus * hgFade;   // on whenever the checkbox is, transformed subspaces or not
     }
 
     void renderHgMini(float px)

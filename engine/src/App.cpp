@@ -210,6 +210,11 @@ int App::run(const std::string& startSim)
         cam.aspect = win.aspect();
         if (activeSim)
             updateAutoPanel(dt);
+        // the panel fades toward where showControls says it should be
+        {
+            const float step = dt / kPanelFadeSeconds, target = showControls ? 1.0f : 0.0f;
+            panelFade += std::clamp(target - panelFade, -step, step);
+        }
 
         if (activeSim)
             activeSim->update(dt);
@@ -220,7 +225,7 @@ int App::run(const std::string& startSim)
         if (activeSim)
         {
             activeSim->render(cam);
-            if (showControls)
+            if (panelFade > 0.0f)   // still drawn while it fades out
                 drawAppUI();
         }
         else
@@ -354,10 +359,17 @@ bool App::captureScreenshot(const std::string& path, int scale)
     return true;
 }
 
+bool App::onPanel(float mx, float my) const
+{
+    return panelW > 0.0f && mx >= panelX - kPanelMargin && mx < panelX + panelW + kPanelMargin &&
+           my >= panelY - kPanelMargin && my < panelY + panelH + kPanelMargin;
+}
+
 // The hidden panel pulls in when the mouse reaches the top-left corner and goes again
-// once the mouse has been off it for kPanelLeaveSeconds or still for kPanelIdleSeconds.
-// A panel shown with H (or by a sim) stays.
-void App::updateAutoPanel(float dt)
+// the moment the mouse is off it (a dragged slider or an open popup keep it). On the
+// way from the corner to the panel, before the mouse has reached it, the stretch
+// between them counts as "on". A panel shown with H (or by a sim) stays.
+void App::updateAutoPanel(float)
 {
     const ImGuiIO& io = ImGui::GetIO();
     const float mx = io.MousePos.x, my = io.MousePos.y;
@@ -365,28 +377,33 @@ void App::updateAutoPanel(float dt)
     const bool moved = mx != lastMouseX || my != lastMouseY;
     lastMouseX = mx;
     lastMouseY = my;
-    mouseIdle = moved ? 0.0f : mouseIdle + dt;
     const bool inCorner = inWindow && mx < kPanelHotCorner && my < kPanelHotCorner;
+    const bool over = inWindow && (controlsHovered || onPanel(mx, my));
 
     if (!showControls)
     {
-        if (inCorner && moved)
+        if (inCorner && moved && panelFade <= 0.0f)
         {
             showControls = controlsAuto = uncollapseControls = true;
-            mouseAway = 0.0f;
-            mouseIdle = 0.0f;
+            panelEntered = false;
         }
+        else if (controlsAuto && panelFade > 0.0f && over)
+            showControls = true;   // came back while it was fading out
         return;
     }
     if (!controlsAuto)
         return;
-    const bool over = controlsHovered || inCorner || ImGui::IsAnyItemActive() ||
+    if (over)
+        panelEntered = true;
+    // the box spanning the corner and the panel, for the approach
+    const bool approaching = !panelEntered && inWindow &&
+                             mx < std::max(panelX + panelW, kPanelHotCorner) + kPanelMargin &&
+                             my < std::max(panelY + panelH, kPanelHotCorner) + kPanelMargin;
+    const bool keep = over || inCorner || approaching || ImGui::IsAnyItemActive() ||
                       ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
-    mouseAway = over ? 0.0f : mouseAway + dt;
-    if (mouseAway >= kPanelLeaveSeconds || mouseIdle >= kPanelIdleSeconds)
+    if (!keep)
     {
-        showControls = false;
-        controlsAuto = false;
+        showControls = false;   // fades out from here
         controlsHovered = false;
     }
 }
@@ -400,10 +417,18 @@ void App::drawAppUI()
         uncollapseControls = false;
         ImGui::SetNextWindowCollapsed(false, ImGuiCond_Always);
     }
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, std::clamp(panelFade, 0.0f, 1.0f));
     ImGui::Begin("Explorer");
     controlsHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows |
                                              ImGuiHoveredFlags_AllowWhenBlockedByActiveItem |
                                              ImGuiHoveredFlags_AllowWhenBlockedByPopup);
+    {
+        const ImVec2 p = ImGui::GetWindowPos(), s = ImGui::GetWindowSize();
+        panelX = p.x;
+        panelY = p.y;
+        panelW = s.x;
+        panelH = s.y;
+    }
     ImGui::Text("%.1f FPS (%.2f ms)", ImGui::GetIO().Framerate, 1000.0f / ImGui::GetIO().Framerate);
 
     if (registry.names().size() > 1)
@@ -416,6 +441,7 @@ void App::drawAppUI()
     ImGui::Separator();
     activeSim->drawUI();
     ImGui::End();
+    ImGui::PopStyleVar();
 }
 
 // Read each registered sim's thumbnail image (if any) into a GL texture for
