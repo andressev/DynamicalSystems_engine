@@ -1,0 +1,1 @@
+add_sim(learn_geodesic_level_sets LearnGeodesicLevelSetsSim.h makeLearnGeodesicLevelSetsSim "LearnGeodesicLevelSetsSim.cpp")

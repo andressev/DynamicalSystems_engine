@@ -3,6 +3,13 @@
 ## Now
 <!-- Max ~5 lines. Current milestone, what's mid-flight, next step. Update as you go —
      this is the first thing read at session start ([[Home]] routing). -->
+- **Manifold growth (started 2026-10-18)** — [[lorenz-manifold-growth]]: hover a bead →
+  popup → grow $W_{loc}$, then grow $W$: **done for curves** ($W^u(O)$, $W^s(C_\pm)$);
+  **surfaces wait for geodesic level sets** (their `Grow W` stays disabled).
+- **Geodesic level sets (started 2026-10-18)** — built step by step, *as the user
+  specifies the method*, in the walkthrough sim [[learn-geodesic-level-sets]] (entered
+  from the growth popup). Done: one BVP step ($r_{new}$ at $\Delta_i$, band, mids,
+  $\Delta_i$ = min). **Next: the full run, ring after ring** — see the section below.
 - **Hartman–Grobman track (started 2026-10-16)** — see the section below. M0 done
   ([[ArrowGlyphs]]), M1 done ([[Eigen3]] + [[InvariantManifold]], checked by the new
   `tests/math_tests` exe), plus a GPU pass ([[0008-gpu-work-split-vertex-stage-and-cuda]]):
@@ -50,6 +57,35 @@
   glyph sampling and many-seed advection are the first kernels; symbolic ∇f in
   [[Expression]] stays the highest-leverage enabler.
 
+## Geodesic level sets track (started 2026-10-18)
+Handoff for the next session — read [[learn-geodesic-level-sets]] (the sim note, every
+mechanism with its function names) and the "One step" paragraph of
+[[global-manifold-growth]] (the method as the user specified it) first.
+- **Ground rule:** the user re-reads the algorithm (Krauskopf & Osinga) and specifies
+  each step; implement what they describe, don't invent the method. Ask when a step is
+  ambiguous.
+- **Where things live:** `sims/learn_geodesic_level_sets/LearnGeodesicLevelSetsSim.cpp`
+  (one file, ~2300 lines). Patch + mesh: `rebuild`, `buildMesh`, `spreadEdge`
+  (maxSpread / minSpread rule on the edge only; inner rings stay uniform in $\theta$).
+  Edge point: `chooseEdge`, `edgeFrame` ($r$, $r^\pm$, $n$, `out`, `across`),
+  `renderEdgePoint`. Particles: `launchAt`, `shootFromR` (V), `shootRing` (B), `findHit`
+  ($b_r(\tau)$, stops there), `renderHits`. BVP: `edgePointD`, `makeAnchor`,
+  `shootToPlane` (hand-stepped Taylor, crossing bisected on the step polynomial),
+  `continueSide`, `pointAt`, `solveAnchor`, `solveAtR`, `recutRing` ($\Delta_i$ = min,
+  mids), `renderBand`. View: `viewFrame` (own orbit frame, screen-up in $\mathcal{F}_r$).
+- **State:** one ring step works per edge point on demand ("Solve geodesic BVP"); at the
+  classic parameters $\|b - r\| = 1 \pm 10^{-10}$, ~15 ms per solve (debug), solutions
+  from the $r^+$ side. Not yet exercised: mids (no gap exceeded maxSpread), broken
+  branches, $\Delta_i < \Delta_{\min}$.
+- **Likely next steps** (confirm with the user): solve every edge point (the whole new
+  ring), then make the new ring the edge (re-spread it by maxSpread / minSpread, new
+  $r^\pm$, new $\mathcal{F}_r$) and repeat — growing $W^s(O)$ ring by ring; the $\Delta_i$
+  adaptation between $\Delta_{\min}$ and $\Delta_{\max}$ (the method's accuracy
+  criteria); then hand the grown surface back to [[lorenz-manifold-growth]] so its
+  surface `Grow W` comes alive.
+- **Conventions here:** particles run in the manifold's own direction of time
+  (backward on $W^s$); $\tau$ is signed ($< 0$ backward). The explorer locks its exe
+  while open (LNK1168): standalone builds still link.
 ## M1 — foundation (done, 2026-07)
 Engine static lib ([[App]], [[Window]], [[Sim]], [[SimRegistry]], [[Camera]], [[Shader]],
 [[Mesh]], [[Shapes]]), ImGui, hybrid explorer + standalone executables,
@@ -88,7 +124,8 @@ Orbits leaving $U$/$V$ dissolve on the rim, both at the same instant.
   M2 [[lorenz-flow]] + [[LorenzSystem]] (done) · M3 handoff + zoom + glass ball/clip (done) · M4 (done) stage A ($E^s$/$E^u$,
   $f$ vs $A(x-x^*)$, HUD, non-hyperbolic warning) · M5 (done) stage B ($\varphi^t$ vs
   $\psi^t$ from $E^s$) · M6 (done) stage C (U and deformed V, $h^{-1}$ links, dissolve) ·
-  M7 refraction (`RenderTarget`), polish, notes.
+  M7 refraction (`RenderTarget`), polish, notes. · Next track: [[lorenz-manifold-growth]]
+  (grow $W_{loc}$ → $W$ per equilibrium; surfaces by geodesic level sets later).
 - Risk: $C_\pm$ at $\rho = 28$ is near the Hopf point ($\rho_H \approx 24.74$,
   $\lambda \approx 0.094 \pm 10.19i$) → near-resonant small divisors, small valid
   radius for $K_u$ (measured: rel. defect $6\cdot10^{-5}$ at $|\theta|=2$, $0.44$ at 4);

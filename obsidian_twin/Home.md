@@ -82,6 +82,8 @@ core is the skeleton sims don't choose). New modules via the `/new-module` skill
 - [[diagonal-linear]] — $\dot x = \mathrm{diag}(\lambda)\,x$ in R3: stable/unstable subspaces + balls of trajectories
 - [[lorenz-flow]] — the global Lorenz flow: field, trajectories, equilibria to hover (linearization) and click (eased zoom → handoff)
 - [[lorenz-equilibrium]] — the flow inside a glass ball $V$ around one Lorenz equilibrium; where Hartman–Grobman stages A/B/C land
+- [[lorenz-manifold-growth]] — grow $W^s$/$W^u$ of each Lorenz equilibrium from a hover popup: the Taylor patch $W_{loc}$ first, then the flow carries a curve on (surfaces wait for geodesic level sets); watch a branch
+- [[learn-geodesic-level-sets]] — the walkthrough of geodesic level sets, entered from the growth popup: the 2-D local manifold alone and its mesh (yellow vertices); the algorithm steps come next
 
 ## Math
 Domain concepts as first-class notes (idea / equations / where implemented / pitfalls);
@@ -91,6 +93,7 @@ sims link to them instead of re-deriving. New concepts from `math/_template.md`.
 - [[lorenz-stable-manifold]] — parametrization method: Taylor patch for a stable manifold
 - [[integral-curves]] — vector fields, flows, equilibria, and glyph conventions
 - [[runge-kutta]] — Euler/RK2/RK4: order, stability, and how they fail
+- [[global-manifold-growth]] — from $W_{loc}$ to $W$: flow the ends of a curve; a surface needs geodesic level sets
 
 ## Decisions
 - [[0001-hybrid-scene-interface-plus-standalone-executables]]
@@ -102,3 +105,4 @@ sims link to them instead of re-deriving. New concepts from `math/_template.md`.
 - [[0007-latex-labels-microtex-imgui]]
 - [[0008-gpu-work-split-vertex-stage-and-cuda]]
 - [[0009-sim-handoff-requestswitch]]
+- [[0010-manifold-popup-and-copied-baseline]]

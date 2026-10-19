@@ -6,6 +6,8 @@
 #include "DiagonalLinearSim.h"
 #include "LorenzFlowSim.h"
 #include "LorenzEquilibriumSim.h"
+#include "LorenzManifoldGrowthSim.h"
+#include "LearnGeodesicLevelSetsSim.h"
 
 #include <iostream>
 
@@ -24,6 +26,10 @@ int main()
                        THUMBS_DIR "lorenz_flow.png");
         app.sims().add("lorenz_equilibrium", &makeLorenzEquilibriumSim,
                        THUMBS_DIR "lorenz_equilibrium.png");
+        app.sims().add("lorenz_manifold_growth", &makeLorenzManifoldGrowthSim,
+                       THUMBS_DIR "lorenz_manifold_growth.png");
+        app.sims().add("learn_geodesic_level_sets", &makeLearnGeodesicLevelSetsSim,
+                       THUMBS_DIR "learn_geodesic_level_sets.png");
 
         return app.run();
     }

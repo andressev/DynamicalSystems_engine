@@ -11,4 +11,6 @@ target_link_libraries(explorer PRIVATE
     sim_diagonal_linear
     sim_lorenz_flow
     sim_lorenz_equilibrium
+    sim_lorenz_manifold_growth
+    sim_learn_geodesic_level_sets
 )
