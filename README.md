@@ -1,8 +1,10 @@
 # Mathematics Engine
 
 An engine for exploring mathematics visually — complex functions on the Riemann sphere,
-raymarched implicit surfaces `f(x,y,z) = c`; ODEs, flows on manifolds and vector fields
-next — built on OpenGL, with CUDA interop for GPU compute on the roadmap. 
+raymarched implicit surfaces `f(x,y,z) = c`, vector fields and their flows, and the
+local and global dynamics of the Lorenz system (linearization, Hartman–Grobman,
+stable and unstable manifolds) — built on OpenGL, with CUDA interop for GPU compute on
+the roadmap.
 Simulations ("sims") are self-contained modules on top of a small engine
 library, and can be run all together from an explorer app or as standalone executables.
 
@@ -107,5 +109,89 @@ surface `f(x,y,z) = c` carves out of space — raymarched per pixel with no mesh
   question) with paper references: `docs/level-set-meshing-proposal.html` — the meshed,
   CUDA-accelerated sibling sim is the planned next step.
 
+
+### vector_field — any vector field on R² or R³
+
+![Vector field sim](docs/screenshots/vector_field.png)
+
+Type a field `f(x)` and see it as arrow glyphs colored by magnitude, with
+`ẋ = f(x)` typeset from exactly what you typed:
+
+- Drop a ball (a disk in R²) of initial conditions and watch it deform under the flow,
+  or click to drop single trajectories, each labelled `φᵗ(x₀)`.
+- Presets: the classic phase portraits in R² (saddle, center, spiral sink, van der Pol,
+  damped pendulum, a time-dependent field) and the strange attractors in R³ (Lorenz,
+  Rössler, Thomas).
+- Arrow keys set the flow's speed and direction, Space pauses; the camera can follow
+  the newest trajectory.
+
+### diagonal_linear — a diagonal linear system in R³
+
+![Diagonal linear sim](docs/screenshots/diagonal_linear.png)
+
+`ẋ = diag(λ₁, λ₂, λ₃) x` with its stable (blue) and unstable (red) eigenspaces drawn in.
+Balls of initial conditions show what the flow does to volumes: they stretch along
+`Eᵘ`, collapse onto it as the `Eˢ` components decay, and their volume scales by
+`e^{(λ₁+λ₂+λ₃)t}`.
+
+### lorenz_flow — the global Lorenz flow
+
+![Lorenz flow sim](docs/screenshots/lorenz_flow.png)
+
+The Lorenz system with live `σ, ρ, β`: arrow field, balls and single trajectories, and
+its equilibria `O`, `C₊`, `C₋` as red beads. Hovering a bead shows its linearization
+(eigenvalues, type); clicking flies the camera onto it and hands off seamlessly to
+`lorenz_equilibrium`.
+
+### lorenz_equilibrium — Hartman–Grobman at one equilibrium
+
+![Lorenz equilibrium sim](docs/screenshots/lorenz_equilibrium.png)
+
+The flow near one equilibrium `x*`, inside a glass ball `V` with everything clipped to
+it — where Hartman–Grobman says the flow looks like its linearization:
+
+- Stage A: `Eˢ`, `Eᵘ` through `x*`, and the field `f` against `A(x − x*)`.
+- Stage B: the linear flow keeps `Eˢ` flat, the true flow doesn't — only the curved
+  stable manifold `Wˢ = x* + Kₛ(θ)` (parametrization method) is invariant.
+- Stage C: the conjugacy itself — a linear ball `U` next to its image `V`, paired orbits,
+  and a check of how large the ball may be.
+- Backspace flies back out to `lorenz_flow`.
+
+### lorenz_manifold_growth — growing stable and unstable manifolds
+
+![Lorenz manifold growth sim](docs/screenshots/lorenz_manifold_growth.png)
+
+The global Lorenz flow again, but hovering a bead opens a small popup to grow its
+manifolds:
+
+- **Grow `W_loc`** grows the local stable or unstable manifold out of `x*` — the Taylor
+  patch of the parametrization method, drawn out to the radius where it is still
+  accurate (both sides of one equilibrium share it).
+- **Grow `W`** carries a one-dimensional manifold on globally: the two ends of the local
+  curve flow on, forward on `Wᵘ` (`W^u(O)` winds onto the attractor) and backward on
+  `Wˢ` (slowed and frozen far out, since the backward Lorenz flow blows up).
+  `watch` rides a branch with the camera, with pause / extend.
+- Two-dimensional manifolds need geodesic level sets: their **Learn geodesic level
+  sets** button zooms onto the patch and switches to the sim below.
+
+### learn_geodesic_level_sets — geodesic level sets, step by step
+
+![Learn geodesic level sets sim](docs/screenshots/learn_geodesic_level_sets.png)
+
+A walkthrough of growing a two-dimensional manifold (`Wˢ(O)` by default) with geodesic
+level sets, built one visual step at a time:
+
+- The local manifold alone, with its triangle mesh (`M`); the edge's points kept between
+  `minSpread` and `maxSpread` apart.
+- Pick an edge point `r`: the view stands upright on it and shows its neighbours `r±`
+  and the half-plane `F_r` through `r`, perpendicular to the edge.
+- A green ball slides along the edge: double-click (or `V`, or shoot a whole row from
+  `r` to the ball) to launch slow particles in the manifold's direction of time
+  (backward on `Wˢ`); where one crosses `F_r` it stops at a golden `b_r(τ)` labelled with
+  its distance to `r`. `B` launches the whole edge at once — the ring tears apart,
+  which is why the surface isn't grown by just flowing its edge.
+- **Solve geodesic BVP** finds, by continuation along the edge, the point whose orbit
+  meets `F_r` at exactly `Δᵢ` from `r` and marks it `r_new`; solved neighbours form
+  the next band of triangles, all at the smallest `Δᵢ` reached.
 
 Details, decision records and module notes live in `obsidian_twin/` (best viewed in Obsidian).
