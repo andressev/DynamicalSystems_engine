@@ -207,7 +207,8 @@ not hyperbolic / no saddle → the section says why and offers nothing.
   (`camAim`, $-1$ = $V$, $+1$ = $U$) eased on the recenter's time; holding **1** or
   Show returns to the midpoint — under the conjugacy, holding **1** goes to the view
   the Show timeline ends on (the pair framed, `hgPairRadius`, in the angles Show was
-  pressed at). Ball V's `radius r`, `glass` and `W^s, W^u` leave the panel while the
+  pressed at). Under the conjugacy, tapping **1** cycles default → on $U$ → on $V$ →
+  default (the same three views, picked from `camAimTo`). Ball V's `radius r`, `glass` and `W^s, W^u` leave the panel while the
   conjugacy is up (V is $\tilde h(U)$ there); the two H-G glasses draw at 0.72 / 0.88.
 - **Labels** (`labels`): $\phi^t(x_0)$ over every green head in $V$, $\psi^t(\theta_0)$
   over every orange head in $U$, and a small $\tilde h$ (as in $V$'s label) at the middle of every link (the link itself a gradient from $\psi^t$'s orange to $\varphi^t$'s green — `fragment.glsl`'s `u_useRamp` 2) —

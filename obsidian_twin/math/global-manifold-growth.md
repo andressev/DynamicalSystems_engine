@@ -51,10 +51,15 @@ $n = \tfrac12(r^+ - r^-)$ (the half outside the edge). The **geodesic BVP**: fin
 point of the edge whose orbit, in the manifold's own direction of time (backward on
 $W^s$), meets $\mathcal{F}_r$ at $b_r(\tau)$ with
 $$\|b_r(\tau) - r\| = \Delta_i .$$
-It is solved by continuation from the trivial solution (start $= r$, $\tau = 0$,
-$b = r$), sliding the start along the edge on each side of $r$: if for tiny slides one
-side never meets $\mathcal{F}_r$, there is no solution from that side; if the solution
-cannot be continued continuously, it broke, and the farthest distance reached is taken.
+(Graph over $s$ vs the paper's graph over $\tau$, and the z-axis vertex: [[geodesic-bvp]].)
+It is solved as in the paper: continuation **in $\tau$** from the trivial solution
+(start $= r$, $\tau = 0$, $b = r$), the start on the edge corrected at each $\tau$ so the
+orbit's endpoint lies in $\mathcal{F}_r$ — one branch, to whichever side it goes; if it
+cannot be continued, it broke, and the farthest distance reached is taken.
+**Accept ring** makes the solved ring the edge: every $r_{new}$ and mid in order,
+re-spread by maxSpread / minSpread, a polyline parametrized by arc length, each point's
+outward direction the one it grew in; the band joins the surface and the next ring is
+solved from it.
 The solution is marked $r_{new}$. Neighbouring solutions are joined by the triangles
 $r \to r^+ \to r_{new}$ and $r^+ \to r^+_{new} \to r_{new}$; where
 $\|r_{new} - r^+_{new}\| > \mathrm{maxSpread}$ a point in between (the BVP at the edge

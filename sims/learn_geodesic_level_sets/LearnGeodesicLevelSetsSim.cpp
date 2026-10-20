@@ -15,6 +15,7 @@
 #include <gtc/quaternion.hpp>
 #include <imgui.h>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -60,11 +61,13 @@ constexpr int kCapacity = kMaxSegs * 3 + (kMaxRings - 1) * kMaxSegs * 6 +
 constexpr float kFramingScale = 3.2f;   // camera distance / patch radius
 constexpr int kOverlayCapacity = 160;   // r, its neighbours, n (shaft + cone), F_r
 constexpr int kBandCapacity = 24 * kMaxEdge;   // the new band: fill, lines, points, orbit
+constexpr int kLayerCapacity = 1 << 20;         // accepted bands: fill, lines, edge loop + points
 constexpr float kPickPixels = 14.0f;    // a click this close to an edge vertex picks it
 constexpr int kEdgeSamples = 1024;      // the edge, sampled for dragging the ball along it
 constexpr int kMaxParticles = 700;      // launched from the ball; the oldest goes first
 constexpr int kMaxRing = 512;           // B: particles from the whole edge (subsampled past this)
-constexpr int kRingPoints = 3000;       // their trails: short, there are many of them
+constexpr int kRingPoints = 5000;       // their trails: fewer points, there are many of them
+constexpr float kRingSpacing = 2e-3f;   // ...spaced this far apart (x radius): trails ~10 radii long
 constexpr int kMaxShoot = 128;          // particles in one shot from r to the ball
 constexpr float kBallStep = 0.25f;      // radians: how far the ball may slide in one frame
 constexpr int kHitCapacity = 4 * kMaxParticles;   // per hit: the dot, the segment to r
@@ -138,10 +141,17 @@ struct Settings {
     // geodesic level sets: neighbouring points of the edge stay between these
     float maxSpread = 1.0f;
     float minSpread = 0.25f;
-    // ... and the step between level sets, Delta_i, stays between these (the BVP aims
-    // for deltaMax; the ring takes the smallest distance its points reached)
+    // ... and the step between level sets, Delta_i, stays between these (the first ring
+    // aims for deltaMax; a ring takes the smallest distance its points reached)
     float deltaMin = 0.25f;
     float deltaMax = 1.0f;
+    // Delta_i adaptation (Krauskopf & Osinga 3.2): alpha_r, the angle at r between
+    // p_r -> r and r -> b_r. A ring is redone at half Delta_i if any alpha_r >= alphaMax
+    // or Delta_i alpha_r >= dAlphaMax (accepted anyway at deltaMin, with a warning); the
+    // next ring doubles Delta_i if every alpha_r < alphaMin and Delta_i alpha_r < dAlphaMin
+    float alphaMin = 0.3f, alphaMax = 0.4f;
+    float dAlphaMin = 0.1f, dAlphaMax = 1.0f;
+    int growRings = 10;                // "Grow rings": how many in one run
     bool showAxes = false;
 
     // orbit view around x* (camRadius <= 0: frame the patch)
@@ -182,6 +192,9 @@ std::vector<Setting> settingsTable(Settings& s)
         {"paramsLatexSize", &s.paramsLatexSize},
         {"maxSpread", &s.maxSpread}, {"minSpread", &s.minSpread},
         {"deltaMin", &s.deltaMin}, {"deltaMax", &s.deltaMax},
+        {"alphaMin", &s.alphaMin}, {"alphaMax", &s.alphaMax},
+        {"dAlphaMin", &s.dAlphaMin}, {"dAlphaMax", &s.dAlphaMax},
+        {"growRings", nullptr, &s.growRings},
         {"showAxes", nullptr, nullptr, &s.showAxes},
         {"cameraTheta", &s.camTheta}, {"cameraPhi", &s.camPhi},
         {"cameraRadius", &s.camRadius},
@@ -249,6 +262,11 @@ void loadSettingsFile(Settings& s, const char* path)
     s.minSpread = std::clamp(s.minSpread, 0.005f, 0.5f * s.maxSpread);
     s.deltaMax = std::clamp(s.deltaMax, 0.01f, 100.0f);
     s.deltaMin = std::clamp(s.deltaMin, 0.005f, s.deltaMax);
+    s.alphaMax = std::clamp(s.alphaMax, 0.01f, 3.0f);
+    s.alphaMin = std::clamp(s.alphaMin, 0.0f, s.alphaMax);
+    s.dAlphaMax = std::clamp(s.dAlphaMax, 0.001f, 100.0f);
+    s.dAlphaMin = std::clamp(s.dAlphaMin, 0.0f, s.dAlphaMax);
+    s.growRings = std::clamp(s.growRings, 1, 1000);
     s.planeScale = std::clamp(s.planeScale, 0.5f, 20.0f);
     s.planeAlpha = std::clamp(s.planeAlpha, 0.0f, 1.0f);
     s.zoomScale = std::clamp(s.zoomScale, 0.5f, 20.0f);
@@ -298,6 +316,7 @@ public:
         hitMesh = std::make_unique<engine::Mesh>(kHitCapacity, std::vector<int>{3});
         frontMesh = std::make_unique<engine::Mesh>(kMaxParticles + 64, std::vector<int>{3});
         bandMesh = std::make_unique<engine::Mesh>(kBandCapacity, std::vector<int>{3});
+        layerMesh = std::make_unique<engine::Mesh>(kLayerCapacity, std::vector<int>{3});
         jet = [this](const double* x, double, int order, double* c) { system.jet(x, order, c); };
 
         loadSettingsFile(cfg, kSettingsPath);
@@ -390,6 +409,10 @@ public:
         hoverEdge = io.WantCaptureMouse || ballHover || ballDragging ? -1 : pickEdge();
         if (hoverEdge >= 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
             chooseEdge(hoverEdge);
+        // a double click also solves the geodesic BVP there
+        if (hoverEdge >= 0 && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+            solveAt(hoverEdge);
+        stepSolveAll();
 
         // the particles: the manifold's own direction of time — backward on W^s (into the
         // past, away from x*), forward on W^u — times the arrow keys' speed and direction
@@ -489,7 +512,8 @@ public:
             shader.setVec3("u_color", color);
             shader.setFloat("u_alpha", 0.9f);
             glLineWidth(cfg.boundaryWidth * px);
-            patchMesh->drawArrays(GL_LINE_LOOP, (int)edgeAngles.size(), boundaryFirst);
+            if (layer == 0)
+                patchMesh->drawArrays(GL_LINE_LOOP, (int)edgeAngles.size(), boundaryFirst);
             if (meshFade > 0.0f)
             {
                 shader.setVec3("u_color", kVertexColor);
@@ -499,6 +523,8 @@ public:
                 patchMesh->drawArrays(GL_POINTS, pointCount, fillCount + edgeCount);
                 shader.setInt("u_round", 0);
             }
+            if (layer > 0)
+                renderLayers(color, px);
             renderEdgePoint(px);
             renderBand(px);
             renderParticles(px);
@@ -574,11 +600,36 @@ public:
         if (redelta)
         {
             cfg.deltaMin = std::min(cfg.deltaMin, cfg.deltaMax);
-            solutions.clear();   // they aimed for the old Delta_max
+            stepDelta = std::clamp(stepDelta, (double)cfg.deltaMin, (double)cfg.deltaMax);
+            solutions.clear();   // they aimed for the old Delta
             mids.clear();
             bvpStatus.clear();
             paramsDirty = true;
         }
+        ImGui::SliderFloat("alpha_min", &cfg.alphaMin, 0.0f, 1.5f, "%.2f rad");
+        ImGui::SliderFloat("alpha_max", &cfg.alphaMax, 0.01f, 1.5f, "%.2f rad");
+        ImGui::SliderFloat("(Delta alpha)_min", &cfg.dAlphaMin, 0.0f, 2.0f, "%.3f");
+        ImGui::SliderFloat("(Delta alpha)_max", &cfg.dAlphaMax, 0.001f, 5.0f, "%.3f");
+        cfg.alphaMin = std::min(cfg.alphaMin, cfg.alphaMax);
+        cfg.dAlphaMin = std::min(cfg.dAlphaMin, cfg.dAlphaMax);
+        ImGui::TextDisabled("Delta_i = %.4g   layer %d   eta = %.4g", stepDelta, layer, eta);
+        if (growLeft > 0)
+        {
+            if (ImGui::Button("Stop growing"))
+                stopGrow("stopped", -1);
+            ImGui::SameLine();
+            ImGui::TextDisabled("ring %d of %d", cfg.growRings - growLeft + 1, cfg.growRings);
+        }
+        else if (!edgeAngles.empty())
+        {
+            if (ImGui::Button("Grow rings"))
+                startGrow();
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(120.0f);
+            ImGui::SliderInt("##growRings", &cfg.growRings, 1, 200);
+        }
+        if (growWarnings > 0)
+            ImGui::TextDisabled("%d ring(s) accepted at Delta_min over the angle bounds", growWarnings);
 
         sectionHeader("Particles");
         if (ImGui::Button(playing ? "Pause" : "Play"))
@@ -629,6 +680,30 @@ public:
                 edgeIndex = -1;
             if (ImGui::Button("Solve geodesic BVP"))
                 solveAtR();
+        }
+        if (!edgeAngles.empty())
+        {
+            if (edgeIndex >= 0)
+                ImGui::SameLine();
+            if (solveAllNext >= 0)
+            {
+                if (ImGui::Button("Stop"))
+                    finishSolveAll();
+                ImGui::SameLine();
+                ImGui::TextDisabled("%d / %d", solveAllNext, (int)solveAllQueue.size());
+            }
+            else if (ImGui::Button("Solve all r"))
+                startSolveAll();
+        }
+        if (ringComplete())
+        {
+            if (ImGui::Button("Accept ring"))
+                acceptRing();
+        }
+        if (layer > 0)
+        {
+            ImGui::SameLine();
+            ImGui::TextDisabled("layer %d", layer);
         }
         if (!solutions.empty())
         {
@@ -811,6 +886,7 @@ private:
         particles.clear();   // they started on the old patch
         solutions.clear();   // so did the BVP's
         mids.clear();
+        clearLayers();
         ++meshVersion;
         if (!found || !error.empty())
             return;
@@ -985,6 +1061,13 @@ private:
                 }
                 out.push_back(pts[i]);
             }
+            // the last point against the first (angle 0 stays)
+            if (out.size() > 4 && glm::length(out.back().p - out[0].p) < minS &&
+                glm::length(out[out.size() - 2].p - out[0].p) <= maxS)
+            {
+                out.pop_back();
+                changed = true;
+            }
             pts.swap(out);
             if (!changed)
                 break;
@@ -1049,27 +1132,79 @@ private:
         return glm::vec3((float)p[0], (float)p[1], (float)p[2]);
     }
 
-    // The edge at angle a: x* + K(radius (cos a e0 + sin a e1)) — the true curve, not
-    // the mesh's polygon.
+    // The edge at parameter a: x* + K(radius (cos a e0 + sin a e1)) at layer 0 — the
+    // true curve, not the mesh's polygon — and the accepted ring's polyline after.
     glm::vec3 edgePoint(float a) const
     {
+        if (layer > 0)
+            return glm::vec3(edgePointD(a));
         return eqPos + onPatch((float)radius * (std::cos(a) * basis0 + std::sin(a) * basis1));
     }
 
     // ---- the geodesic BVP ---------------------------------------------------------------
     //
-    // For an edge point r with its half-plane F_r (normal n = (r^+ - r^-)/2): find the
-    // edge point whose orbit — in the manifold's own direction of time — meets F_r at
-    // b_r(tau) with ||b_r(tau) - r|| = Delta. The start slides from r along the edge, on
-    // each side, and the solution is continued from (start = r, tau = 0, b = r) outward.
+    // Krauskopf & Osinga 3.1. For an edge point r with its plane F_r (through r, normal
+    // n = (r^+ - r^-)/2), the one-parameter family of BVPs in the field time tau (the
+    // manifold's own direction of time): a start gamma(s) on the edge with
+    //     G(s, tau) = n.(phi^tau(gamma(s)) - r) = 0,   b_r(tau) = phi^tau(gamma(s)).
+    // From the trivial solution (s_r, 0) the branch s(tau) is continued in tau (unique
+    // by the implicit function theorem, as dG/ds = n.gamma' != 0 there) until the first
+    // tau with ||b_r(tau) - r|| = Delta. One branch: it goes to whichever side of r it
+    // goes, or stays at r (the z-axis of W^s(O)). See math/geodesic-bvp.
 
-    // The edge at angle a, in double precision (the continuation steps get tiny).
+    // The edge at parameter a, in double precision (the continuation steps get tiny).
+    // Past layer 0 the edge is the accepted ring: linear between its points, by the
+    // parameter each was given (arc length, scaled to 2 pi).
     glm::dvec3 edgePointD(double a) const
     {
+        if (layer > 0)
+        {
+            int i, k;
+            const double t = ringSpan(a, i, k);
+            return glm::mix(ringPts[(size_t)i], ringPts[(size_t)k], t);
+        }
         const glm::dvec3 th = radius * (std::cos(a) * glm::dvec3(basis0) + std::sin(a) * glm::dvec3(basis1));
         const engine::InvariantManifold& k = K[side];
         auto q = k.eval(k.toParam({th.x, th.y, th.z}));
         return eqPosD + glm::dvec3(q[0], q[1], q[2]);
+    }
+
+    // The accepted ring's stretch holding parameter a: from point i to point k, and how
+    // far along it a sits (0..1).
+    double ringSpan(double a, int& i, int& k) const
+    {
+        const int E = (int)ringParam.size();
+        a = wrapAngle(a);
+        i = (int)(std::upper_bound(ringParam.begin(), ringParam.end(), a) - ringParam.begin()) - 1;
+        i = std::clamp(i, 0, E - 1);
+        k = (i + 1) % E;
+        const double a0 = ringParam[(size_t)i];
+        const double a1 = i + 1 < E ? ringParam[(size_t)k] : 6.283185307179586;
+        return a1 > a0 ? std::clamp((a - a0) / (a1 - a0), 0.0, 1.0) : 0.0;
+    }
+
+    // F's outward direction at edge parameter a, its part along nh (unit normal) removed:
+    // K's radial direction at layer 0; past it, the direction the ring just grew in
+    // (r_new minus its start on the previous edge), interpolated along the ring.
+    glm::dvec3 outwardAt(double a, const glm::dvec3& nh) const
+    {
+        glm::dvec3 radial;
+        if (layer > 0)
+        {
+            int i, k;
+            const double t = ringSpan(a, i, k);
+            radial = glm::mix(ringOut[(size_t)i], ringOut[(size_t)k], t);
+        }
+        else
+        {
+            const glm::dvec3 th = radius * (std::cos(a) * glm::dvec3(basis0) + std::sin(a) * glm::dvec3(basis1));
+            const engine::InvariantManifold& k = K[side];
+            auto q0 = k.eval(k.toParam({th.x, th.y, th.z}));
+            auto q1 = k.eval(k.toParam({1.001 * th.x, 1.001 * th.y, 1.001 * th.z}));
+            radial = glm::dvec3(q1[0] - q0[0], q1[1] - q0[1], q1[2] - q0[2]);
+        }
+        radial -= glm::dot(radial, nh) * nh;
+        return glm::length(radial) > 1e-15 ? glm::normalize(radial) : radial;
     }
 
     // Where a BVP is posed: the point r (angle on the edge), F_r's normal and outward
@@ -1095,186 +1230,176 @@ private:
         A.n = 0.5 * (edgePointD(aPlus) - edgePointD(aMinus));
         A.gapPlus = wrapAngle(aPlus - a);
         A.gapMinus = wrapAngle(a - aMinus);
-        const glm::dvec3 nh = glm::normalize(A.n);
-        glm::dvec3 radial = edgePointD(a) - eqPosD;   // fallback
-        {
-            const glm::dvec3 th = radius * (std::cos(a) * glm::dvec3(basis0) + std::sin(a) * glm::dvec3(basis1));
-            const engine::InvariantManifold& k = K[side];
-            auto q0 = k.eval(k.toParam({th.x, th.y, th.z}));
-            auto q1 = k.eval(k.toParam({1.001 * th.x, 1.001 * th.y, 1.001 * th.z}));
-            radial = glm::dvec3(q1[0] - q0[0], q1[1] - q0[1], q1[2] - q0[2]);
-        }
-        radial -= glm::dot(radial, nh) * nh;
-        A.out = glm::normalize(radial);
+        A.out = outwardAt(a, glm::normalize(A.n));
         return A;
     }
 
-    struct PlaneHit {
-        bool ok = false;
-        glm::dvec3 b{0.0};
-        double tau = 0.0, d = 0.0;
-    };
-
-    // From the edge at `angle`, integrate (Taylor, steps short enough not to skip a
-    // crossing) until the orbit meets F (outer half): b exact on the step's polynomial
-    // (bisection), tau the signed time, d = ||b - r||. None if it wanders more than
-    // 3 reach beyond where it started, or runs out of steps. `orbit` (optional) gets
-    // the path for drawing.
-    PlaneHit shootToPlane(double angle, const Anchor& A, double reach,
-                          std::vector<glm::vec3>* orbit = nullptr) const
+    // phi^t(gamma(a)) for signed field time t: hand-stepped Taylor, the last step cut to
+    // land exactly at t. `orbit` (optional) gets the path for drawing, steps capped at
+    // `drawStep` world units so it looks smooth. False if it blows up.
+    bool flowFrom(double a, double t, glm::dvec3& out, std::vector<glm::vec3>* orbit = nullptr,
+                  double drawStep = 0.0) const
     {
-        PlaneHit H;
-        const glm::dvec3 s0 = edgePointD(angle);
+        const glm::dvec3 s0 = edgePointD(a);
         double x[3] = {s0.x, s0.y, s0.z};
-        double t = 0.0;
-        const glm::dvec3 nh = glm::normalize(A.n);
-        auto g = [&](const double* q) { return glm::dot(glm::dvec3(q[0], q[1], q[2]) - A.r, nh); };
-        const double dir = side == 0 ? -1.0 : 1.0;
-        const double escape = glm::length(s0 - A.r) + 3.0 * reach;
-        const int order = taylor.order;
-        std::vector<double> c((size_t)(order + 1) * 3);
-        double g0 = g(x);
         if (orbit)
             orbit->push_back(glm::vec3(s0));
-        for (int step = 0; step < 6000; ++step)
+        const int order = taylor.order;
+        std::vector<double> c((size_t)(order + 1) * 3);
+        const double dir = t < 0.0 ? -1.0 : 1.0, total = std::abs(t);
+        double done = 0.0;
+        for (int step = 0; step < 20000 && done < total; ++step)
         {
-            jet(x, t, order, c.data());
-            const double speed = std::sqrt(c[3] * c[3] + c[4] * c[4] + c[5] * c[5]);
-            const double h = dir * std::min(taylor.stepSize(c.data(), 3), 0.02 * reach / std::max(speed, 1e-12));
-            double x1[3];
-            engine::TaylorIntegrator::evaluate(c.data(), 3, order, h, x1);
-            const double g1 = g(x1);
-            if ((g0 < 0.0 && g1 > 0.0) || (g0 > 0.0 && g1 < 0.0))
+            jet(x, dir * done, order, c.data());
+            double h = std::min(taylor.stepSize(c.data(), 3), total - done);
+            if (orbit && drawStep > 0.0)
             {
-                double lo = 0.0, hi = h, glo = g0, xm[3];
-                for (int it = 0; it < 60; ++it)
-                {
-                    const double mid = 0.5 * (lo + hi);
-                    engine::TaylorIntegrator::evaluate(c.data(), 3, order, mid, xm);
-                    const double gm = g(xm);
-                    if ((gm < 0.0) == (glo < 0.0))
-                    {
-                        lo = mid;
-                        glo = gm;
-                    }
-                    else
-                        hi = mid;
-                }
-                const double sm = 0.5 * (lo + hi);
-                engine::TaylorIntegrator::evaluate(c.data(), 3, order, sm, xm);
-                const glm::dvec3 b(xm[0], xm[1], xm[2]);
-                if (glm::dot(b - A.r, A.out) >= -0.05 * glm::length(A.n))
-                {
-                    H.ok = true;
-                    H.b = b;
-                    H.tau = t + sm;
-                    H.d = glm::length(b - A.r);
-                    if (orbit)
-                        orbit->push_back(glm::vec3(b));
-                    return H;
-                }
+                const double speed = std::sqrt(c[3] * c[3] + c[4] * c[4] + c[5] * c[5]);
+                h = std::min(h, drawStep / std::max(speed, 1e-12));
             }
+            double x1[3];
+            engine::TaylorIntegrator::evaluate(c.data(), 3, order, dir * h, x1);
             x[0] = x1[0];
             x[1] = x1[1];
             x[2] = x1[2];
-            t += h;
-            g0 = g1;
+            done = h >= total - done ? total : done + h;
+            if (!std::isfinite(x[0] + x[1] + x[2]) || std::abs(x[0]) + std::abs(x[1]) + std::abs(x[2]) > 1e8)
+                return false;
             if (orbit)
                 orbit->push_back(glm::vec3((float)x[0], (float)x[1], (float)x[2]));
-            if (glm::length(glm::dvec3(x[0], x[1], x[2]) - A.r) > escape)
-                return H;
         }
-        return H;
+        out = glm::dvec3(x[0], x[1], x[2]);
+        return done >= total;
     }
 
-    // One sample of a continuation: the start angle on the edge, where its orbit met F.
+    // One point of a branch: the start a on the edge (unwrapped, so the branch is
+    // continuous), d = ||b - r||, tau (signed field time), b in F_r.
     struct Sample {
         double a = 0.0, d = 0.0, tau = 0.0;
         glm::dvec3 b{0.0};
     };
 
-    // Continue from r along one side of the edge (sigma = +1 toward r^+, -1 toward r^-)
-    // until ||b - r|| reaches target. A step is taken only if its orbit meets F and b
-    // moved continuously (at most 0.15 target); else the step halves. A first, tiny step
-    // that never meets F: no solution from this side. Steps that shrink to nothing:
-    // the solution broke, and the path ends where it got.
+    // The BVP at |tau| = T: the start s with G(s, T) = 0, by secant from sGuess (the
+    // predictor). False if it does not converge or slides more than two neighbour gaps.
+    bool correct(const Anchor& A, double T, double sGuess, Sample& out) const
+    {
+        const glm::dvec3 nh = glm::normalize(A.n);
+        const double t = (side == 0 ? -1.0 : 1.0) * T;
+        const double gap = std::max(A.gapPlus, A.gapMinus);
+        const double tol = 1e-12 * (1.0 + glm::length(A.n));
+        auto G = [&](double sv, glm::dvec3& b) {
+            return flowFrom(sv, t, b) ? glm::dot(b - A.r, nh) : std::nan("");
+        };
+        double s0 = sGuess, s1 = sGuess + 1e-7 * gap;
+        glm::dvec3 b0, b1;
+        double g0 = G(s0, b0);
+        if (std::abs(g0) < tol)
+        {
+            out = {s0, glm::length(b0 - A.r), t, b0};
+            return true;
+        }
+        double g1 = G(s1, b1);
+        for (int it = 0; it < 40; ++it)
+        {
+            if (!std::isfinite(g0) || !std::isfinite(g1))
+                return false;
+            if (std::abs(g1) < tol)
+            {
+                out = {s1, glm::length(b1 - A.r), t, b1};
+                return true;
+            }
+            if (g1 == g0)
+                return false;
+            const double s2 = s1 - g1 * (s1 - s0) / (g1 - g0);
+            if (std::abs(s2 - sGuess) > 2.0 * gap)
+                return false;
+            s0 = s1;
+            g0 = g1;
+            s1 = s2;
+            g1 = G(s1, b1);
+        }
+        return false;
+    }
+
+    // The point of the branch between lo and hi (|tau| increasing, d crossing D) where
+    // d = D: bisection on |tau|, the start predicted linearly between the two.
+    Sample bisectTau(const Anchor& A, Sample lo, Sample hi, double D) const
+    {
+        for (int it = 0; it < 60; ++it)
+        {
+            const double T0 = std::abs(lo.tau), T1 = std::abs(hi.tau), Tm = 0.5 * (T0 + T1);
+            Sample M;
+            if (!correct(A, Tm, 0.5 * (lo.a + hi.a), M))
+                break;
+            if (std::abs(M.d - D) < 1e-10 * std::max(D, 1.0))
+                return M;
+            (M.d < D ? lo : hi) = M;
+        }
+        return hi;
+    }
+
+    // The continued branch: its points, whether ||b - r|| reached the target, and the
+    // farthest it got.
     struct Branch {
         std::vector<Sample> path;
         bool reached = false;
-        double best = 0.0;   // the farthest ||b - r|| along the path
+        double best = 0.0;
     };
 
-    Branch continueSide(const Anchor& A, int sigma, double target) const
+    // Continue s(tau) from (s_r, 0) in tau: predictor along the last slope ds/dtau,
+    // corrector at the new tau. A step is kept only if it converges and b moved
+    // continuously (at most 0.15 target); else it halves. Stops at the first tau with
+    // ||b - r|| = target (bisected), or where the step shrinks to nothing (broke).
+    Branch continueTau(const Anchor& A, double target) const
     {
         Branch B;
         B.path.push_back({A.angle, 0.0, 0.0, A.r});
-        const double gap = sigma > 0 ? A.gapPlus : A.gapMinus;
-        double delta = 0.0, step = 1e-3 * gap;
-        const double minStep = 1e-8 * gap, maxDelta = 1.5707963;
-        for (int it = 0; it < 800; ++it)
+        double f[3];
+        const double r3[3] = {A.r.x, A.r.y, A.r.z};
+        system.eval(r3, f);
+        const double speed = std::sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+        double T = 0.0, dT = 0.02 * target / std::max(speed, 1e-12), slope = 0.0;
+        const double minStep = 1e-9 * dT;
+        for (int it = 0; it < 600; ++it)
         {
-            const double tryDelta = delta + step;
-            if (tryDelta > maxDelta)
-                break;
-            const PlaneHit H = shootToPlane(A.angle + sigma * tryDelta, A, target);
-            const Sample& last = B.path.back();
-            if (!H.ok || glm::length(H.b - last.b) > 0.15 * target)
+            const Sample last = B.path.back();
+            Sample S;
+            if (!correct(A, T + dT, last.a + slope * dT, S) || glm::length(S.b - last.b) > 0.15 * target)
             {
-                step *= 0.5;
-                if (step < minStep)
+                dT *= 0.5;
+                if (dT < minStep)
                     break;
                 continue;
             }
-            B.path.push_back({wrapAngle(A.angle + sigma * tryDelta), H.d, H.tau, H.b});
-            B.best = std::max(B.best, H.d);
-            delta = tryDelta;
-            if (H.d >= target)
+            if (S.d >= target)
             {
+                const Sample hit = bisectTau(A, last, S, target);
+                B.path.push_back(hit);
+                B.best = std::max(B.best, hit.d);
                 B.reached = true;
                 break;
             }
-            const double dd = H.d - last.d;
-            step *= dd > 1e-12 ? std::clamp(0.05 * target / dd, 0.5, 2.0) : 1.5;
+            slope = (S.a - last.a) / dT;
+            B.path.push_back(S);
+            B.best = std::max(B.best, S.d);
+            T += dT;
+            const double dd = S.d - last.d;
+            dT *= dd > 1e-12 ? std::clamp(0.05 * target / dd, 0.5, 2.0) : 1.5;
         }
         return B;
     }
 
     // The point of a branch at distance D (<= its best): the first stretch of the path
-    // that crosses D, bisected on the start angle (re-shooting) until d is D.
-    Sample pointAt(const Branch& B, const Anchor& A, double D, double reach) const
+    // that crosses D, bisected in tau.
+    Sample pointAt(const Branch& B, const Anchor& A, double D) const
     {
         if (D <= 0.0 || B.path.size() < 2)
             return B.path.front();
         for (size_t k = 1; k < B.path.size(); ++k)
-        {
-            if (B.path[k].d < D)
-                continue;
-            Sample lo = B.path[k - 1], hi = B.path[k];
-            // the path's angles may wrap: bisect on the offset from lo
-            double span = hi.a - lo.a;
-            if (span > 3.14159265)
-                span -= 6.283185307179586;
-            else if (span < -3.14159265)
-                span += 6.283185307179586;
-            double u0 = 0.0, u1 = 1.0;
-            Sample best = hi;
-            for (int it = 0; it < 50; ++it)
-            {
-                const double u = 0.5 * (u0 + u1);
-                const double a = wrapAngle(lo.a + u * span);
-                const PlaneHit H = shootToPlane(a, A, reach);
-                if (!H.ok)
-                {
-                    u1 = u;
-                    continue;
-                }
-                best = {a, H.d, H.tau, H.b};
-                if (std::abs(H.d - D) < 1e-10 * std::max(D, 1.0))
-                    break;
-                (H.d < D ? u0 : u1) = u;
-            }
-            return best;
-        }
+            if (B.path[k].d >= D)
+                return std::abs(B.path[k].d - D) < 1e-10 * std::max(D, 1.0)
+                           ? B.path[k]
+                           : bisectTau(A, B.path[k - 1], B.path[k], D);
         return B.path.back();
     }
 
@@ -1290,54 +1415,284 @@ private:
         std::vector<glm::vec3> orbit;
     };
 
-    // Solve at an anchor: continue both sides; if both reach the target the one with
-    // the shorter flow time wins (|tau| at the end), if one does it wins, else the one
-    // that got farther. False when neither side met F at all.
+    // Solve at an anchor: the branch continued out to target, or as far as it goes.
+    // False when it could not take a single step.
     bool solveAnchor(const Anchor& A, double target, Solution& S) const
     {
-        Branch plus = continueSide(A, +1, target), minus = continueSide(A, -1, target);
-        const bool havePlus = plus.path.size() > 1, haveMinus = minus.path.size() > 1;
-        if (!havePlus && !haveMinus)
+        Branch B = continueTau(A, target);
+        if (B.path.size() < 2)
             return false;
-        const Branch* pick = havePlus ? &plus : &minus;
-        if (havePlus && haveMinus)
-        {
-            if (plus.reached && minus.reached)
-                pick = std::abs(plus.path.back().tau) <= std::abs(minus.path.back().tau) ? &plus : &minus;
-            else if (plus.reached != minus.reached)
-                pick = plus.reached ? &plus : &minus;
-            else
-                pick = plus.best >= minus.best ? &plus : &minus;
-        }
         S.A = A;
-        S.branch = *pick;
-        S.achieved = pick->reached ? target : pick->best;
+        S.branch = std::move(B);
+        S.achieved = S.branch.reached ? target : S.branch.best;
         return true;
     }
 
-    // "Solve geodesic BVP" at the chosen r: solve, then re-cut the whole ring.
+    // "Solve geodesic BVP" at the chosen r.
     void solveAtR()
     {
-        if (edgeIndex < 0 || edgeAngles.empty())
+        if (edgeIndex >= 0)
+            solveAt(edgeIndex);
+    }
+
+    // Solve at edge vertex j, then re-cut the whole ring.
+    void solveAt(int j)
+    {
+        if (j < 0 || j >= (int)edgeAngles.size())
             return;
-        const int E = (int)edgeAngles.size(), j = edgeIndex;
+        if (!solveVertex(j))
+        {
+            bvpStatus = "no solution: the branch could not be continued from r";
+            return;
+        }
+        std::sort(solutions.begin(), solutions.end(),
+                  [](const Solution& a, const Solution& b) { return a.edge < b.edge; });
+        recutRing();
+    }
+
+    // The BVP at edge vertex j into `solutions` (replacing its old one); no re-cut.
+    bool solveVertex(int j)
+    {
+        const int E = (int)edgeAngles.size();
         const Anchor A = makeAnchor(edgeAngles[(size_t)j], edgeAngles[(size_t)((j - 1 + E) % E)],
                                     edgeAngles[(size_t)((j + 1) % E)]);
         Solution S;
-        if (!solveAnchor(A, cfg.deltaMax, S))
-        {
-            bvpStatus = "no solution from either side of r";
-            return;
-        }
+        if (!solveAnchor(A, stepDelta, S))
+            return false;
         S.edge = j;
         solutions.erase(std::remove_if(solutions.begin(), solutions.end(),
                                        [&](const Solution& q) { return q.edge == j; }),
                         solutions.end());
         solutions.push_back(std::move(S));
+        lastSolved = j;
+        return true;
+    }
+
+    // "Solve all r": every edge vertex not solved yet, going on from the one after the
+    // last solved (so after solving one by hand it carries on from there), a slice per
+    // frame (kSolveAllBudgetMs) so the window stays live, then one re-cut. A new mesh
+    // cancels it (its vertices are gone).
+    void startSolveAll()
+    {
+        const int E = (int)edgeAngles.size();
+        if (E == 0)
+            return;
+        solveAllQueue.clear();
+        const int from = lastSolved >= 0 && lastSolved < E ? lastSolved + 1 : 0;
+        for (int i = 0; i < E; ++i)
+        {
+            const int j = (from + i) % E;
+            if (!solutionAt(j))
+                solveAllQueue.push_back(j);
+        }
+        if (solveAllQueue.empty())
+            return;
+        solveAllNext = 0;
+        solveAllVersion = meshVersion;
+    }
+
+    void stepSolveAll()
+    {
+        if (solveAllNext < 0)
+            return;
+        if (solveAllVersion != meshVersion)
+        {
+            solveAllNext = -1;
+            return;
+        }
+        const auto start = std::chrono::steady_clock::now();
+        const int n = (int)solveAllQueue.size();
+        while (solveAllNext < n)
+        {
+            solveVertex(solveAllQueue[(size_t)solveAllNext++]);
+            if (std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - start).count() >
+                kSolveAllBudgetMs)
+                break;
+        }
+        if (solveAllNext >= n)
+            finishSolveAll();
+    }
+
+    // Done or stopped: what was solved so far, sorted and re-cut.
+    void finishSolveAll()
+    {
+        const bool done = solveAllNext >= (int)solveAllQueue.size();
+        solveAllNext = -1;
         std::sort(solutions.begin(), solutions.end(),
                   [](const Solution& a, const Solution& b) { return a.edge < b.edge; });
-        recutRing();
+        if (!solutions.empty())
+            recutRing();
+        if (growLeft > 0 && done)
+            growStep();
     }
+
+    // edge vertex -> index into `solutions` (-1: not solved)
+    std::vector<int> solutionIndex() const
+    {
+        std::vector<int> at(edgeAngles.size(), -1);
+        for (size_t i = 0; i < solutions.size(); ++i)
+            if (solutions[i].edge >= 0 && solutions[i].edge < (int)at.size())
+                at[(size_t)solutions[i].edge] = (int)i;
+        return at;
+    }
+
+    // ---- Delta_i adaptation (3.2) and the grow run --------------------------------------
+
+    // alpha_r for a solved edge vertex: the angle at r between p_r -> r (p_r the point of
+    // the previous ring whose BVP gave r; at layer 0, K's radial direction) and r -> b_r.
+    double alphaOf(const Solution& q) const
+    {
+        glm::dvec3 in;
+        if (layer > 0 && !ringPrev.empty())
+        {
+            int i, k;
+            const double t = ringSpan(q.A.angle, i, k);
+            in = q.A.r - glm::mix(ringPrev[(size_t)i], ringPrev[(size_t)k], t);
+        }
+        else
+            in = outwardAt(q.A.angle, glm::normalize(q.A.n));
+        const glm::dvec3 step = q.point - q.A.r;
+        const double l = glm::length(in) * glm::length(step);
+        return l > 0.0 ? std::acos(std::clamp(glm::dot(in, step) / l, -1.0, 1.0)) : 0.0;
+    }
+
+    // The ring against the bounds: the largest alpha_r and Delta_i alpha_r, where, and
+    // whether the ring passes (ok) / is well inside (small, so Delta_i may double).
+    struct RingCheck {
+        bool ok = true, small = true;
+        double maxAlpha = 0.0, maxDA = 0.0;
+        int worst = -1, shortest = -1;
+        int reversed = 0, reversedAt = -1;   // new segments against their old ones
+    };
+
+    RingCheck checkRing() const
+    {
+        RingCheck c;
+        double least = 1e300;
+        for (const Solution& q : solutions)
+        {
+            const double a = alphaOf(q), da = ringDelta * a;
+            if (a > c.maxAlpha)
+            {
+                c.maxAlpha = a;
+                c.worst = q.edge;
+            }
+            c.maxDA = std::max(c.maxDA, da);
+            if (a >= cfg.alphaMax || da >= cfg.dAlphaMax)
+                c.ok = false;
+            if (a >= cfg.alphaMin || da >= cfg.dAlphaMin)
+                c.small = false;
+            if (q.achieved < least)
+            {
+                least = q.achieved;
+                c.shortest = q.edge;
+            }
+        }
+        // order (3.3): walking the ring, each new segment must run the way its old one
+        // did; one that points back means two points passed each other in this step (a
+        // concave stretch of the ring where the planes F_r converge within Delta_i)
+        std::vector<const Solution*> seq;
+        for (const Solution& q : solutions)   // sorted by edge vertex
+        {
+            seq.push_back(&q);
+            auto m = mids.find(q.edge);
+            if (m != mids.end())
+                seq.push_back(&m->second);
+        }
+        const int n = (int)seq.size();
+        for (int i = 0; n > 3 && i < n; ++i)
+        {
+            const Solution& a = *seq[(size_t)i];
+            const Solution& b = *seq[(size_t)((i + 1) % n)];
+            if (glm::dot(b.point - a.point, b.A.r - a.A.r) <= 0.0)
+            {
+                ++c.reversed;
+                if (c.reversedAt < 0)
+                    c.reversedAt = a.edge >= 0 ? a.edge : seq[(size_t)((i + n - 1) % n)]->edge;
+            }
+        }
+        if (c.reversed > 0)
+            c.ok = c.small = false;
+        return c;
+    }
+
+    // "Grow rings": growRings rings, each solved (Solve all, a slice per frame) and
+    // checked: halved while the angles fail and Delta_i > Delta_min (the branches are
+    // kept, only the cut moves), accepted — with a warning if still failing at
+    // Delta_min — and the next Delta_i set by Accept ring. Stops at a vertex with no
+    // solution or a branch that broke below Delta_min, and opens that vertex.
+    void startGrow()
+    {
+        if (edgeAngles.empty())
+            return;
+        growLeft = cfg.growRings;
+        growWarnings = 0;
+        if (ringComplete())
+            growStep();
+        else
+            startSolveAll();
+    }
+
+    void growStep()
+    {
+        const int E = (int)edgeAngles.size();
+        for (int j = 0; j < E; ++j)
+            if (!solutionAt(j))
+            {
+                stopGrow("no solution: the branch could not be continued from this vertex", j);
+                return;
+            }
+        RingCheck c = checkRing();
+        while (!c.ok && stepDelta > cfg.deltaMin * (1.0 + 1e-9))
+        {
+            stepDelta = std::max(0.5 * stepDelta, (double)cfg.deltaMin);
+            recutRing();
+            c = checkRing();
+        }
+        // a branch that broke at (or under) Delta_min drags the whole ring down to it
+        if (ringDelta <= cfg.deltaMin * (1.0 + 1e-9) && ringDelta < stepDelta * (1.0 - 1e-9))
+        {
+            char b[128];
+            std::snprintf(b, sizeof(b), "branch broke at ||b - r|| = %.4g (Delta_min %.4g)", ringDelta,
+                          (double)cfg.deltaMin);
+            stopGrow(b, c.shortest);
+            return;
+        }
+        // a point that grows backward (alpha_r past 90 degrees): the ring folds over
+        if (c.maxAlpha > 1.5707963)
+        {
+            char b[128];
+            std::snprintf(b, sizeof(b), "r_new grows backward: alpha_r = %.3g at Delta_i = %.4g", c.maxAlpha,
+                          ringDelta);
+            stopGrow(b, c.worst);
+            return;
+        }
+        if (c.reversed > 0)
+        {
+            char b[128];
+            std::snprintf(b, sizeof(b), "ring folds: %d new segment(s) reversed even at Delta_i = %.4g",
+                          c.reversed, ringDelta);
+            stopGrow(b, c.reversedAt);
+            return;
+        }
+        if (!c.ok)
+            ++growWarnings;
+        acceptRing();
+        if (--growLeft > 0)
+            startSolveAll();
+    }
+
+    // End a grow run; with a vertex, select it (zoom in) so what went wrong is in view.
+    void stopGrow(const std::string& why, int vertex)
+    {
+        growLeft = 0;
+        if (solveAllNext >= 0)
+            finishSolveAll();
+        bvpStatus = why;
+        if (vertex >= 0 && vertex < (int)edgeAngles.size())
+            chooseEdge(vertex);
+    }
+
 
     Solution* solutionAt(int j)
     {
@@ -1356,13 +1711,13 @@ private:
         const int E = (int)edgeAngles.size();
         for (int pass = 0; pass < 4; ++pass)
         {
-            ringDelta = cfg.deltaMax;
+            ringDelta = stepDelta;
             for (const Solution& q : solutions)
                 ringDelta = std::min(ringDelta, q.achieved);
             for (const auto& m : mids)
                 ringDelta = std::min(ringDelta, m.second.achieved);
             auto place = [&](Solution& q) {
-                const Sample p = pointAt(q.branch, q.A, ringDelta, cfg.deltaMax);
+                const Sample p = pointAt(q.branch, q.A, ringDelta);
                 q.point = p.b;
                 q.tau = p.tau;
                 q.start = p.a;
@@ -1372,19 +1727,17 @@ private:
             for (auto& m : mids)
                 place(m.second);
             bool added = false;
+            const std::vector<int> at = solutionIndex();
             for (const Solution& q : solutions)
             {
                 const int j = q.edge, k = (j + 1) % E;
-                const Solution* next = nullptr;
-                for (const Solution& w : solutions)
-                    if (w.edge == k)
-                        next = &w;
+                const Solution* next = at[(size_t)k] >= 0 ? &solutions[(size_t)at[(size_t)k]] : nullptr;
                 if (!next || mids.count(j) || glm::length(next->point - q.point) <= cfg.maxSpread)
                     continue;
                 const double a = edgeAngles[(size_t)j];
                 const double am = wrapAngle(a + 0.5 * wrapAngle(edgeAngles[(size_t)k] - a));
                 Solution M;
-                if (solveAnchor(makeAnchor(am, a, edgeAngles[(size_t)k]), cfg.deltaMax, M))
+                if (solveAnchor(makeAnchor(am, a, edgeAngles[(size_t)k]), stepDelta, M))
                 {
                     M.edge = -1;
                     mids[j] = std::move(M);
@@ -1394,45 +1747,43 @@ private:
             if (!added)
                 break;
         }
-        // drop the mids whose pair no longer needs one (or lost a point)
-        for (auto it = mids.begin(); it != mids.end();)
+        // drop the mids whose pair lost a point
         {
-            const Solution* a = nullptr;
-            const Solution* b = nullptr;
-            for (const Solution& w : solutions)
+            const std::vector<int> at = solutionIndex();
+            for (auto it = mids.begin(); it != mids.end();)
             {
-                if (w.edge == it->first)
-                    a = &w;
-                if (w.edge == (it->first + 1) % E)
-                    b = &w;
+                if (at[(size_t)it->first] < 0 || at[(size_t)((it->first + 1) % E)] < 0)
+                    it = mids.erase(it);
+                else
+                    ++it;
             }
-            if (!a || !b)
-                it = mids.erase(it);
-            else
-                ++it;
         }
         for (Solution& q : solutions)
         {
             q.orbit.clear();
-            shootToPlane(q.start, q.A, cfg.deltaMax, &q.orbit);
+            glm::dvec3 end;
+            flowFrom(q.start, q.tau, end, &q.orbit, 0.02 * cfg.deltaMax);
         }
         for (auto& m : mids)
         {
             m.second.orbit.clear();
-            shootToPlane(m.second.start, m.second.A, cfg.deltaMax, &m.second.orbit);
+            glm::dvec3 end;
+            flowFrom(m.second.start, m.second.tau, end, &m.second.orbit, 0.02 * cfg.deltaMax);
         }
         char b[160];
         const Solution* cur = nullptr;
         for (const Solution& q : solutions)
             if (q.edge == edgeIndex)
                 cur = &q;
+        const RingCheck c = checkRing();
         if (cur)
-            std::snprintf(b, sizeof(b), "r_new: tau = %.5g, ||b - r|| = %.5g%s; Delta_i = %.4g%s",
+            std::snprintf(b, sizeof(b), "r_new: tau = %.5g, ||b - r|| = %.5g%s, alpha_r = %.3g; Delta_i = %.4g%s",
                           cur->tau, glm::length(cur->point - cur->A.r),
-                          cur->branch.reached ? "" : " (broke)", ringDelta,
+                          cur->branch.reached ? "" : " (broke)", alphaOf(*cur), ringDelta,
                           ringDelta < cfg.deltaMin ? " < Delta_min" : "");
         else
-            std::snprintf(b, sizeof(b), "Delta_i = %.4g", ringDelta);
+            std::snprintf(b, sizeof(b), "Delta_i = %.4g, max alpha_r = %.3g (vertex %d), max Delta alpha = %.3g",
+                          ringDelta, c.maxAlpha, c.worst, c.maxDA);
         bvpStatus = b;
         paramsDirty = true;
     }
@@ -1444,35 +1795,10 @@ private:
     {
         if (solutions.empty())
             return;
-        const int E = (int)edgeAngles.size();
         std::vector<float> v;
         auto put = [&](const glm::dvec3& p) { v.insert(v.end(), {(float)p.x, (float)p.y, (float)p.z}); };
         std::vector<glm::dvec3> lines;
-        for (const Solution& q : solutions)
-        {
-            const int k = (q.edge + 1) % E;
-            const Solution* next = nullptr;
-            for (const Solution& w : solutions)
-                if (w.edge == k)
-                    next = &w;
-            if (!next)
-                continue;
-            const glm::dvec3 r = q.A.r, rp = next->A.r, rn = q.point, rpn = next->point;
-            auto mid = mids.find(q.edge);
-            if (mid == mids.end())
-            {
-                for (const glm::dvec3& p : {r, rp, rn, rp, rpn, rn})
-                    put(p);
-                lines.insert(lines.end(), {rn, rpn, rp, rn});
-            }
-            else
-            {
-                const glm::dvec3 m = mid->second.point;
-                for (const glm::dvec3& p : {r, rp, m, r, m, rn, rp, rpn, m})
-                    put(p);
-                lines.insert(lines.end(), {rn, m, m, rpn, r, m, rp, m});
-            }
-        }
+        bandGeometry(v, lines);
         const int fill = (int)(v.size() / 3);
         for (const Solution& q : solutions)   // each r -> r_new
             lines.insert(lines.end(), {q.A.r, q.point});
@@ -1513,6 +1839,231 @@ private:
         shader.setFloat("u_pointSize", 1.7f * cfg.vertexSize * px);
         bandMesh->drawArrays(GL_POINTS, pointCount, pointsFirst);
         shader.setInt("u_round", 0);
+    }
+
+    // The band's triangles (into tri, as floats) and lines (pairs): for neighbouring
+    // solved edge points r, r^+ the triangles r -> r^+ -> r_new and r^+ -> r^+_new ->
+    // r_new, through the mid point when one was needed.
+    void bandGeometry(std::vector<float>& tri, std::vector<glm::dvec3>& lines) const
+    {
+        const int E = (int)edgeAngles.size();
+        auto put = [&](const glm::dvec3& p) { tri.insert(tri.end(), {(float)p.x, (float)p.y, (float)p.z}); };
+        const std::vector<int> at = solutionIndex();
+        for (const Solution& q : solutions)
+        {
+            const int k = (q.edge + 1) % E;
+            if (at[(size_t)k] < 0)
+                continue;
+            const Solution* next = &solutions[(size_t)at[(size_t)k]];
+            const glm::dvec3 r = q.A.r, rp = next->A.r, rn = q.point, rpn = next->point;
+            auto mid = mids.find(q.edge);
+            if (mid == mids.end())
+            {
+                for (const glm::dvec3& p : {r, rp, rn, rp, rpn, rn})
+                    put(p);
+                lines.insert(lines.end(), {rn, rpn, rp, rn});
+            }
+            else
+            {
+                const glm::dvec3 m = mid->second.point;
+                for (const glm::dvec3& p : {r, rp, m, r, m, rn, rp, rpn, m})
+                    put(p);
+                lines.insert(lines.end(), {rn, m, m, rpn, r, m, rp, m});
+            }
+        }
+    }
+
+    // ---- accepted rings: the edge moves out ---------------------------------------------
+
+    // Every edge vertex solved (and no Solve all running): the ring can become the edge.
+    bool ringComplete() const
+    {
+        return solveAllNext < 0 && !edgeAngles.empty() && solutions.size() == edgeAngles.size();
+    }
+
+    // "Accept ring": the solved ring becomes the edge. Its points (every r_new, the mids
+    // between them) in order, each with the direction it grew in (r_new minus its start
+    // on the old edge); re-spread by the maxSpread / minSpread rule (a point closer than
+    // minSpread to the one before goes, unless the gap left would pass maxSpread; a gap
+    // still over maxSpread gets the midpoint of the ring's polyline); a parameter by arc
+    // length scaled to 2 pi. The band between the old edge and the ring joins the
+    // accepted surface (layerTri / layerLines).
+    void acceptRing()
+    {
+        if (!ringComplete())
+            return;
+        // the next Delta_i (3.2): doubled if every alpha_r is well inside the bounds
+        const RingCheck c = checkRing();
+        const double usedDelta = ringDelta;
+        struct Pt {
+            glm::dvec3 p, out, prev;   // r_new, the direction it grew in, its p_r
+        };
+        std::vector<Pt> pts;
+        auto grown = [&](const Solution& q) { return Pt{q.point, q.point - edgePointD(q.start), q.A.r}; };
+        for (const Solution& q : solutions)   // sorted by edge vertex
+        {
+            pts.push_back(grown(q));
+            auto m = mids.find(q.edge);
+            if (m != mids.end())
+                pts.push_back(grown(m->second));
+        }
+        const double maxS = cfg.maxSpread, minS = std::min(cfg.minSpread, 0.5f * cfg.maxSpread);
+        for (int pass = 0; pass < 64; ++pass)
+        {
+            bool changed = false;
+            // a pair closer than minSpread loses one point: the one whose removal leaves
+            // the smaller gap (never one over maxSpread). Cyclic and symmetric — any
+            // point may go — so no point of the ring is privileged: a fixed survivor at
+            // index 0 bent the ring there, ring after ring, in sheared stretches.
+            for (size_t i = 0; pts.size() > 4 && i < pts.size();)
+            {
+                const size_t m = pts.size(), j = (i + 1) % m;
+                if (glm::length(pts[j].p - pts[i].p) >= minS)
+                {
+                    ++i;
+                    continue;
+                }
+                const double gapDropI = glm::length(pts[j].p - pts[(i + m - 1) % m].p);
+                const double gapDropJ = glm::length(pts[(j + 1) % m].p - pts[i].p);
+                size_t drop = gapDropI <= gapDropJ ? i : j;
+                if (std::min(gapDropI, gapDropJ) > maxS)
+                {
+                    ++i;   // either removal would open a gap over maxSpread: keep both
+                    continue;
+                }
+                pts.erase(pts.begin() + (std::ptrdiff_t)drop);
+                changed = true;
+                if (drop < i)
+                    --i;   // stay on the pair that now starts at i
+            }
+            std::vector<Pt> out;
+            const int n = (int)pts.size();
+            for (int i = 0; i < n; ++i)
+            {
+                out.push_back(pts[(size_t)i]);
+                const Pt& next = pts[(size_t)((i + 1) % n)];
+                if (glm::length(next.p - pts[(size_t)i].p) > maxS && (int)out.size() + (n - i) < kMaxEdge)
+                {
+                    out.push_back({0.5 * (pts[(size_t)i].p + next.p), 0.5 * (pts[(size_t)i].out + next.out),
+                                   0.5 * (pts[(size_t)i].prev + next.prev)});
+                    ++linearInserts;
+                    changed = true;
+                }
+            }
+            pts.swap(out);
+            if (!changed)
+                break;
+        }
+
+        // the band joins the accepted surface, the old edge's loop with its lines
+        std::vector<float> tri;
+        std::vector<glm::dvec3> lines;
+        bandGeometry(tri, lines);
+        if ((layerTri.size() + tri.size()) / 3 + layerLines.size() + lines.size() + 3 * pts.size() >
+            (size_t)kLayerCapacity)
+        {
+            bvpStatus = "accepted surface is full";
+            return;
+        }
+        layerTri.insert(layerTri.end(), tri.begin(), tri.end());
+        layerLines.insert(layerLines.end(), lines.begin(), lines.end());
+
+        // the ring as the new edge: parameter by arc length, scaled to 2 pi
+        const int n = (int)pts.size();
+        std::vector<double> cum(n + 1, 0.0);
+        for (int i = 0; i < n; ++i)
+            cum[(size_t)i + 1] = cum[(size_t)i] + glm::length(pts[(size_t)((i + 1) % n)].p - pts[(size_t)i].p);
+        ringPts.clear();
+        ringOut.clear();
+        ringPrev.clear();
+        ringParam.clear();
+        edgeAngles.clear();
+        for (int i = 0; i < n; ++i)
+        {
+            // stored as the float the edge keeps, so edgePointD(edgeAngles[j]) is point j
+            const float a = (float)(6.283185307179586 * cum[(size_t)i] / std::max(cum[(size_t)n], 1e-300));
+            edgeAngles.push_back(a);
+            ringParam.push_back((double)a);
+            ringPts.push_back(pts[(size_t)i].p);
+            ringOut.push_back(pts[(size_t)i].out);
+            ringPrev.push_back(pts[(size_t)i].prev);
+        }
+        ++layer;
+        eta += usedDelta;
+        stepDelta = std::clamp(c.small ? 2.0 * usedDelta : usedDelta, (double)cfg.deltaMin, (double)cfg.deltaMax);
+        solutions.clear();
+        mids.clear();
+        lastSolved = -1;
+        ++meshVersion;   // hits and a running batch belonged to the old edge
+        edgeIndex = std::min(edgeIndex, n - 1);
+        for (int k = 0; k < kEdgeSamples; ++k)
+            edgeCurve[(size_t)k] = edgePoint(6.2831853f * (float)k / kEdgeSamples);
+        uploadLayers();
+        char b[96];
+        std::snprintf(b, sizeof(b), "layer %d: %d edge points, eta = %.4g, max alpha_r %.3g; next Delta_i = %.4g",
+                      layer, n, eta, c.maxAlpha, stepDelta);
+        bvpStatus = b;
+        paramsDirty = true;
+    }
+
+    void clearLayers()
+    {
+        layer = 0;
+        eta = 0.0;
+        stepDelta = cfg.deltaMax;
+        growLeft = 0;
+        linearInserts = 0;
+        ringPrev.clear();
+        layerTri.clear();
+        layerLines.clear();
+        ringPts.clear();
+        ringOut.clear();
+        ringParam.clear();
+        layerFill = layerLineCount = 0;
+    }
+
+    // The layer mesh: accepted bands' triangles, their lines, then the current edge as a
+    // loop (its points double as the vertex dots).
+    void uploadLayers()
+    {
+        std::vector<float> v = layerTri;
+        layerFill = (int)(v.size() / 3);
+        for (const glm::dvec3& p : layerLines)
+            v.insert(v.end(), {(float)p.x, (float)p.y, (float)p.z});
+        layerLineCount = (int)layerLines.size();
+        for (const glm::dvec3& p : ringPts)
+            v.insert(v.end(), {(float)p.x, (float)p.y, (float)p.z});
+        layerMesh->setVertices(v.data(), std::min(v.size(), (size_t)kLayerCapacity * 3));
+    }
+
+    // The accepted surface as the patch is drawn: fill, lines (with the mesh), the edge
+    // loop, its vertices (with the mesh).
+    void renderLayers(const glm::vec3& color, float px)
+    {
+        shader.setVec3("u_color", color);
+        shader.setFloat("u_alpha", cfg.fillAlpha);
+        layerMesh->drawArrays(GL_TRIANGLES, layerFill, 0);
+        if (meshFade > 0.0f)
+        {
+            shader.setVec3("u_color", kEdgeColor);
+            shader.setFloat("u_alpha", cfg.edgeAlpha * meshFade);
+            glLineWidth(cfg.edgeWidth * px);
+            layerMesh->drawArrays(GL_LINES, layerLineCount, layerFill);
+        }
+        const int edgeFirst = layerFill + layerLineCount, E = (int)ringPts.size();
+        shader.setVec3("u_color", color);
+        shader.setFloat("u_alpha", 0.9f);
+        glLineWidth(cfg.boundaryWidth * px);
+        layerMesh->drawArrays(GL_LINE_LOOP, E, edgeFirst);
+        if (meshFade > 0.0f)
+        {
+            shader.setVec3("u_color", kVertexColor);
+            shader.setFloat("u_alpha", meshFade);
+            shader.setFloat("u_pointSize", cfg.vertexSize * px);
+            shader.setInt("u_round", 1);
+            layerMesh->drawArrays(GL_POINTS, E, edgeFirst);
+            shader.setInt("u_round", 0);
+        }
     }
 
     // r_new beside the current r's solution, away from r on screen.
@@ -1662,7 +2213,7 @@ private:
         const double seed[3] = {p.x, p.y, p.z};
         auto P = std::make_unique<Particle>();
         P->traj = std::make_unique<engine::Trajectory>(3, seed, 0.0, ring ? kRingPoints : kParticlePoints);
-        P->traj->minSpacing = 1e-4f * (float)radius;
+        P->traj->minSpacing = (ring ? kRingSpacing : 1e-4f) * (float)radius;
         P->batch = batch;
         P->ring = ring;
         particles.push_back(std::move(P));
@@ -1885,6 +2436,8 @@ private:
     glm::vec3 edgeVertex(int j) const
     {
         const int R = cfg.rings, S = cfg.segs, E = (int)edgeAngles.size();
+        if (layer > 0)
+            return glm::vec3(ringPts[(size_t)((j % E + E) % E)]);
         return verts[1 + (size_t)(R - 1) * S + (size_t)((j % E + E) % E)];
     }
 
@@ -1909,12 +2462,10 @@ private:
             return false;
         const glm::vec3 nh = f.n / len;
         const float a = edgeAngles[(size_t)(j % (int)edgeAngles.size())];
-        const glm::vec3 theta = (float)radius * (std::cos(a) * basis0 + std::sin(a) * basis1);
-        glm::vec3 radial = onPatch(1.01f * theta) - onPatch(theta);
-        radial -= glm::dot(radial, nh) * nh;
-        if (glm::length(radial) < 1e-9f)
+        const glm::vec3 out = glm::vec3(outwardAt(a, glm::dvec3(nh)));
+        if (glm::length(out) < 0.5f)
             return false;
-        f.out = glm::normalize(radial);
+        f.out = out;
         f.across = glm::normalize(glm::cross(nh, f.out));
         f.size = cfg.planeScale * 2.0f * len;
         return true;
@@ -2278,6 +2829,21 @@ private:
     std::unique_ptr<engine::Mesh> axisMesh;
     std::unique_ptr<engine::Mesh> sphereMesh;
     std::unique_ptr<engine::Mesh> patchMesh;
+    // accepted rings (acceptRing): how many, the bands between them, the current edge
+    // (past layer 0) as points with their parameter and the direction each grew in
+    std::unique_ptr<engine::Mesh> layerMesh;
+    int layer = 0;
+    std::vector<float> layerTri;
+    std::vector<glm::dvec3> layerLines;
+    int layerFill = 0, layerLineCount = 0;
+    std::vector<glm::dvec3> ringPts, ringOut;
+    std::vector<glm::dvec3> ringPrev;   // each edge point's p_r (the 3.2 angle check)
+    std::vector<double> ringParam;
+    // Delta_i (3.2): the step the current ring is solved for; eta the geodesic distance
+    // of the current edge from the first one; the grow run
+    double stepDelta = 1.0, eta = 0.0;
+    int growLeft = 0, growWarnings = 0;
+    int linearInserts = 0;              // accept-time midpoints not solved by a BVP
 
     Settings cfg;
     std::string settingsStatus;
@@ -2315,6 +2881,11 @@ private:
     std::map<int, Solution> mids;     // keyed by the first edge vertex of the pair
     double ringDelta = 0.0;
     std::string bvpStatus;
+    std::vector<int> solveAllQueue;   // "Solve all r": the vertices it still has to do
+    int solveAllNext = -1;            // ...next index into it (-1: not running)
+    int lastSolved = -1;              // edge vertex solved most recently
+    int solveAllVersion = 0;          // the meshVersion it was started on
+    static constexpr float kSolveAllBudgetMs = 12.0f;   // its slice of each frame
     std::unique_ptr<engine::Mesh> bandMesh;
     engine::LatexImage newLabel;
     float newLabelSize = 0.0f;

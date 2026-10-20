@@ -92,12 +92,12 @@ private:
     Handoff pendingHandoff;
     Handoff handoffValues;  // what the active sim was handed
     float captureScale = 1.0f;
-    bool showControls = true; // the Explorer panel (sim controls); H toggles it
+    bool showControls = false; // the Explorer panel (sim controls); H toggles it — hidden at start
     bool controlsAuto = false;   // shown by the hot corner: hides as the mouse leaves
     bool controlsHovered = false; // the panel under the mouse last frame (drawAppUI)
     bool uncollapseControls = false; // open the panel on the next drawAppUI
     bool panelEntered = false;    // the mouse has reached the auto panel since the pull
-    float panelFade = 1.0f;       // 0 hidden -> 1 shown, eased toward showControls
+    float panelFade = 0.0f;       // 0 hidden -> 1 shown, eased toward showControls
     float panelX = 0.0f, panelY = 0.0f, panelW = 0.0f, panelH = 0.0f;   // its rect (drawAppUI)
     float lastMouseX = -1.0f, lastMouseY = -1.0f;
     void updateAutoPanel(float dt);

@@ -6,7 +6,7 @@ manifoldOrder 12
 rings 10
 segs 48
 showMesh 0
-fillAlpha 0.34
+fillAlpha 0.3
 edgeAlpha 0.68
 edgeWidth 1.5
 vertexSize 5
@@ -20,7 +20,7 @@ ballSize 16
 particleSize 9
 particleTrail 2
 shootCount 32
-eqRadius 0.21
+eqRadius 0.19
 showLabels 1
 labelSize 30
 patchLabelSize 41
@@ -30,11 +30,11 @@ showParams 1
 paramsLatexSize 21
 maxSpread 1
 minSpread 0.25
-showAxes 1
-cameraTheta 1.599
-cameraPhi 1.97565
-cameraRadius 81.7065
-orbitSpeed 1.2
-zoomSpeed 0
 deltaMin 0.25
 deltaMax 1
+showAxes 1
+cameraTheta 1.91384
+cameraPhi 1.31066
+cameraRadius 35.4793
+orbitSpeed 1.2
+zoomSpeed 0

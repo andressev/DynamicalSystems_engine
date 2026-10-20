@@ -79,8 +79,8 @@ evenly along the edge from $r$ to the ball, the shorter way round, as one batch;
 is seen as the flow carries it. The shot's first particle starts at $r$, already in
 $\mathcal{F}_r$: it is a hit at once ($b_r = r$, $\tau = 0$, distance 0) and never moves.
 **V** with the cursor on the ball shoots too. **B** (or **Whole edge**) sends a
-particle from every edge point at once (`shootRing`, at most `kMaxRing`, short trails
-`kRingPoints`), in the manifold's direction of time, joined head to head as a closed
+particle from every edge point at once (`shootRing`, at most `kMaxRing`, trails of
+`kRingPoints` points spaced `kRingSpacing` radii apart, ~10 radii long), in the manifold's direction of time, joined head to head as a closed
 loop — the ring tears into streaks almost at once (bunching at the cusp, stretching
 off along the strong direction), which is why the surface is grown by geodesic level
 sets and not by flowing its edge. These never stop at $\mathcal{F}_r$. When $r$ moves (`chooseEdge`), the ball
@@ -112,23 +112,28 @@ a curve in the plane ($\tau$ from $-0.001$ on), the one from $r$ itself went on.
 BVP** (under Edge point) finds, for the current $r$, the edge point whose orbit meets
 $\mathcal{F}_r$ at distance $\Delta_{\max}$ from $r$, and marks it $r_{new}$ (cyan,
 labelled; the current $r$'s orbit from its start on the edge drawn to it).
-`shootToPlane` integrates in double precision straight from the jet (steps capped so
-the orbit moves at most $0.02\,\Delta$ per step, so no crossing is skipped) and
-bisects the crossing on the step's polynomial; `continueSide` slides the start from
-$r$ along the edge toward $r^+$ and toward $r^-$ (first slide $10^{-3}$ of the
-neighbour gap; a step must meet $\mathcal{F}_r$ and move $b$ by at most
-$0.15\,\Delta$, else it halves; below $10^{-8}$ of the gap the branch is broken),
-until $\|b - r\| \ge \Delta$; `pointAt` bisects the start angle to the exact
-distance. Both sides reaching: the smaller $|\tau|$ wins; neither: the farther.
+It is the paper's formulation ([[geodesic-bvp]]): the branch $s(\tau)$ of zeros of
+$G(s,\tau) = \hat n^\top(\varphi^\tau(\gamma(s)) - r)$ continued in $\tau$ from
+$(s_r, 0)$ — one branch, no sides, no half-plane. `flowFrom` integrates in double
+precision straight from the jet for exactly time $\tau$ (the last step cut; steps
+capped at $0.02\,\Delta$ only when drawing the orbit); `correct` solves $G = 0$ for the
+start by secant at fixed $\tau$ (rejects a slide over two neighbour gaps);
+`continueTau` steps $\tau$ (first step $0.02\,\Delta / |f(r)|$, predictor along the last
+$ds/d\tau$; a step must converge and move $b$ by at most $0.15\,\Delta$, else it halves;
+below $10^{-9}$ of the first step the branch is broken; the step adapts so $\|b - r\|$
+grows $\approx 0.05\,\Delta$ per step) until $\|b - r\| \ge \Delta$, the hit bisected in
+$\tau$ (`bisectTau`); `pointAt` does the same bisection for a smaller $\Delta_i$. On the
+z-axis of $W^s(O)$ the start stays at $r$ ($10^{-8}$) and $b = r \pm \Delta\,\hat z$
+exactly, $\tau$ the analytic $\ln(z_b/z_r)/\beta$. `out` / the half-plane are only for
+drawing $\mathcal{F}_r$ and for the particles' hits.
 `recutRing`: $\Delta_i$ = the minimum over all solved points (and mids) of what they
 reached, every point re-cut to it on its stored branch; neighbours whose $r_{new}$ are
 more than maxSpread apart get the edge point midway solved too (`mids`). `renderBand`
 draws the triangles $r \to r^+ \to r_{new}$, $r^+ \to r^+_{new} \to r_{new}$ (three
 through a mid), their lines and the points. $\Delta_i$ joins the top-right readout; the
 panel line gives $\tau$, $\|b - r\|$ and whether the branch broke or $\Delta_i$ fell
-below $\Delta_{\min}$. Measured at the classic parameters, edge vertices 0–3:
-each solve $\approx 15$ ms (debug), $\|b - r\| = 1 \pm 10^{-10}$, all from the $r^+$
-side (start $\approx 0.057$ rad from $r$), $\tau \approx -0.0054 \ldots -0.0060$.
+below $\Delta_{\min}$. Measured at the classic parameters (debug): a whole first ring (156 points, 8
+mids) in 0.5 s at $\Delta_i = 1$, the next rings (164, 178 points) in about 0.1 s each.
 A new mesh, a new $\Delta_{\min}/\Delta_{\max}$, or **Clear solutions** drops them.
 
 **The rest of the run** (growing ring after ring) comes as the user specifies it, and the next steps
@@ -197,7 +202,10 @@ $r$, Back to the flow), **Mesh** (show mesh, rings, vertices per ring, counts),
 **Particles** (Play/Pause, speed, reverse, `ball` angle,
 Launch, Shoot r → ball + particle count, Clear particles, Whole edge), **Geodesic level sets** (maxSpread, minSpread, Delta_min, Delta_max), **Edge point**
 (`r` slider — none or a vertex index, or click an edge vertex; Zoom to r, Clear;
-Solve geodesic BVP, Clear solutions, a status line), collapsed **Other settings** (camera; edge point — plane size,
+Solve geodesic BVP — or **double-click** an edge vertex —, Solve all r — every vertex
+not solved yet, from the one after the last solved (`lastSolved`) round the edge,
+`kSolveAllBudgetMs` of each frame, with a count and Stop, one `recutRing` at the end —,
+Clear solutions, a status line). Collapsed **Other settings** (camera; edge point — plane size,
 plane opacity, zoom distance; particles — ball size, particle size, trail width;
 **LaTeX** — labels on/off, parameters on/off, a size for each: equilibrium, $W_{loc}$,
 $r$/$n$/$\mathcal{F}_r$, $b_r(\tau)$ and distance, parameters; look — fill / edge opacity, edge width, vertex

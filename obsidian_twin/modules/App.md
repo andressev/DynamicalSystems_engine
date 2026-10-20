@@ -56,7 +56,7 @@ Sims use the `App&` handed to `init`:
 - **F11** toggles borderless full screen ([[Window]] `toggleFullscreen`; the window's
   maximize button enters it as well).
 - **H** toggles the Explorer panel (App's FPS/menu row + the sim's `drawUI`) in every
-  sim — `showControls`, checked in `run` before `drawAppUI`; a sim reads / sets it with
+  sim — `showControls` (false at startup: the app opens hidden), checked in `run` before `drawAppUI`; a sim reads / sets it with
   `controlsVisible()` / `setControlsVisible(bool)` (e.g. [[lorenz-equilibrium]] hides it
   when Show conjugacy starts the timeline). A hidden panel also pulls in by itself
   when the mouse reaches the window's top-left corner (`kPanelHotCorner`, 48 px,

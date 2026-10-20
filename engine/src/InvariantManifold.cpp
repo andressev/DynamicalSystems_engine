@@ -285,27 +285,68 @@ double InvariantManifold::defect(const Param& s) const
 {
     if (!valid())
         return 0.0;
+    double fieldNorm;
+    return defectAndField(s, fieldNorm);
+}
+
+// K(s) and d/dt K(e^{Lambda t} s) in one pass over the coefficients, with the powers of
+// w2 on the stack: the same operations in the same order as eval() + the derivative
+// sum, so the results are bit-identical, at half the work and no heap allocation.
+double InvariantManifold::defectAndField(const Param& s, double& fieldNorm) const
+{
     cd w1, w2;
     vars(s, w1, w2);
-    std::vector<cd> pw2(n + 1);
+    constexpr int kStackPowers = 33;
+    cd stackPw2[kStackPowers];
+    std::vector<cd> heapPw2;
+    cd* pw2 = stackPw2;
+    if (n + 1 > kStackPowers)
+    {
+        heapPw2.resize(n + 1);
+        pw2 = heapPw2.data();
+    }
     pw2[0] = 1.0;
     for (int j = 1; j <= n; ++j)
         pw2[j] = pw2[j - 1] * w2;
 
     // d/dt K(e^{Lambda t} s) at t = 0 = sum (m lambda_0 + j lambda_1) p_mj w^(m,j)
-    CVec3 dK{};
+    CVec3 out{}, dK{};
     cd pw1 = 1.0;
     for (int m = 0; m <= n; ++m, pw1 *= w1)
         for (int j = 0; j + m <= n && (k == 2 || j == 0); ++j)
         {
+            cd basis = pw1 * pw2[j];
             cd w = ((double)m * lambda[0] + (double)j * lambda[1]) * pw1 * pw2[j];
             const CVec3& c = p[idx(m, j)];
             for (int i = 0; i < 3; ++i)
+            {
+                out[i] += c[i] * basis;
                 dK[i] += c[i] * w;
+            }
         }
-    Vec3 f = field(eval(s));
+    Vec3 f = field({out[0].real(), out[1].real(), out[2].real()});
+    fieldNorm = length(f);
     Vec3 diff = {f[0] - dK[0].real(), f[1] - dK[1].real(), f[2] - dK[2].real()};
     return length(diff);
+}
+
+// Sample i of `count` on the sphere of radius r in E, as a parameter.
+InvariantManifold::Param InvariantManifold::sphereParam(double r, int i, int count) const
+{
+    Vec3 theta;
+    if (k == 1)
+    {
+        double sgn = i == 0 ? r : -r;
+        theta = {O[0][0] * sgn, O[0][1] * sgn, O[0][2] * sgn};
+    }
+    else
+    {
+        double ph = 6.283185307179586 * i / count;
+        double c = r * std::cos(ph), sn = r * std::sin(ph);
+        for (int a = 0; a < 3; ++a)
+            theta[a] = c * O[0][a] + sn * O[1][a];
+    }
+    return toParam(theta);
 }
 
 double InvariantManifold::maxRelDefect(double r, int samples) const
@@ -316,24 +357,26 @@ double InvariantManifold::maxRelDefect(double r, int samples) const
     int count = k == 1 ? 2 : std::max(samples, 4);
     for (int i = 0; i < count; ++i)
     {
-        Vec3 theta;
-        if (k == 1)
-        {
-            double sgn = i == 0 ? r : -r;
-            theta = {O[0][0] * sgn, O[0][1] * sgn, O[0][2] * sgn};
-        }
-        else
-        {
-            double ph = 6.283185307179586 * i / count;
-            double c = r * std::cos(ph), sn = r * std::sin(ph);
-            for (int a = 0; a < 3; ++a)
-                theta[a] = c * O[0][a] + sn * O[1][a];
-        }
-        Param s = toParam(theta);
-        double fl = length(field(eval(s)));
-        worst = std::max(worst, defect(s) / std::max(fl, 1e-300));
+        double fl;
+        double d = defectAndField(sphereParam(r, i, count), fl);
+        worst = std::max(worst, d / std::max(fl, 1e-300));
     }
     return worst;
+}
+
+bool InvariantManifold::relDefectBelow(double r, double tol, int samples) const
+{
+    if (!valid())
+        return 0.0 < tol;
+    int count = k == 1 ? 2 : std::max(samples, 4);
+    for (int i = 0; i < count; ++i)
+    {
+        double fl;
+        double d = defectAndField(sphereParam(r, i, count), fl);
+        if (d / std::max(fl, 1e-300) >= tol)   // >=, as maxRelDefect's max skips a NaN
+            return false;
+    }
+    return 0.0 < tol;
 }
 
 } // namespace engine

@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "architecture/roadmap.md",
+                "file": "math/geodesic-bvp.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "roadmap"
+              "title": "geodesic-bvp"
             }
           }
         ]
@@ -187,6 +187,7 @@
   },
   "active": "1a9335d0d8506997",
   "lastOpenFiles": [
+    "architecture/roadmap.md",
     "sims/lorenz-equilibrium.md.tmp.53596.1f1228b4a51c",
     "sims/lorenz-equilibrium.md.tmp.53596.54a8c89f2166",
     "modules/FrameCopy.md",
@@ -203,7 +204,6 @@
     "modules/GpuTimer.md.tmp.53596.716471cb8b09",
     "modules/FlowKeys.md.tmp.53596.bcdd78c57e6c",
     "modules/FlowKeys.md.tmp.53596.a4a2a342fdad",
-    "sims/vector-field.md.tmp.53596.f684af700bed",
     "modules/FlowKeys.md",
     "sims/lorenz-flow.md",
     "modules/LorenzSystem.md",

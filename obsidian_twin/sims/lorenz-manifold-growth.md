@@ -5,6 +5,7 @@ code:
   - sims/lorenz_manifold_growth/LorenzManifoldGrowthSim.cpp
   - sims/lorenz_manifold_growth/shaders/vertex.glsl
   - sims/lorenz_manifold_growth/shaders/fragment.glsl
+  - sims/lorenz_manifold_growth/shaders/surface_vertex.glsl
   - sims/lorenz_manifold_growth/shaders/equilibrium_vertex.glsl
   - sims/lorenz_manifold_growth/shaders/equilibrium_fragment.glsl
 ---
@@ -44,15 +45,25 @@ in debug), so the zoom out starts where it should.
 `init` loads `settings.txt`, builds the axis and sphere meshes and sets the ODE
 right-hand side to [[LorenzSystem]]`::eval`. `applyParams()` (any $\sigma/\rho/\beta$
 change) re-reads the equilibria, runs [[Eigen3]] on each Jacobian and classifies it,
-then `rebuildManifolds()`: for every equilibrium and side, `K.build` (order `K order`,
-default 12), `trustedRadius(K)` — the largest $|\theta|$ (bisection up to 25) where the
-relative invariance defect `maxRelDefect` stays under $10^{-3}$ at eight radii out to
-it — and `buildLocal`: a curve as two strips of `kCurveSteps` points
-$x^* + K(\pm r\,e)$ along the orthonormal basis of $E$, a surface as a disk of
-`kRings` $\times$ `kSegs` triangles followed by every ring as a loop (so the growing edge
-can be drawn). Each side keeps its own dynamic [[Mesh]]. A parameter change keeps what
-is grown locally (rebuilt live) but drops the global branches — they belonged to the
-old field — and any watch on them.
+then `rebuildManifolds()`, which only marks every equilibrium stale (`ready = false`,
+`manifoldGen` bumped) and drops the global branches — they belonged to the old field —
+and any watch on them. Dragging $\sigma/\rho/\beta$ therefore moves only the field and
+the equilibria. `pollManifolds` (every `update`) starts one worker (`std::async`) per
+stale equilibrium once no slider is held (`paramsDragging`), and applies a finished
+result only if its `jobGen` is still the current `manifoldGen` (else it is dropped and
+redone). The worker, `computeManifolds`, is pure: `K.build` on both sides (order
+`K order`, default 12, at most [[ConjugacyMap]]`::kMaxOrder` = 16) and `trustedRadius(K)`
+— the largest $|\theta|$ (bisection up to 25) where the relative invariance defect stays
+under $10^{-3}$ at eight radii out to it (`relDefectBelow`, the eight checked in parallel,
+outermost first; same result as the original `maxRelDefect` loop, bit for bit, ~6x
+faster). Until its equilibrium is `ready` a side shows "computing..." in the popup and
+cannot be grown; what was grown locally reappears at the new radius. `init` (and the
+handoff back) computes synchronously (`computeManifoldsNow`). `applyManifolds` then
+sets the equilibrium's [[ConjugacyMap]] from $K_s, K_u$ (needed by every surface) and
+runs `buildLocal`: a curve as two strips of `kCurveSteps` points $x^* + K(\pm r\,e)$
+along the orthonormal basis of $E$ (on the CPU); a surface as the *unit disk of $E$* in
+`kRings` $\times$ `kSegs` triangles followed by every ring as a loop. Each side keeps its
+own dynamic [[Mesh]].
 
 `update`: [[FlowKeys]] + Space, advance balls/singles as in lorenz_flow, then the
 **branches**: forward ones by $+|h|$, backward ones by $-|h|$ (the singles' method —
@@ -77,9 +88,15 @@ toward the hovered / popup bead, `grow` of every local manifold eased $0 \to 1$,
 **The popup** (`drawManifoldPopup`, `drawSideSection`): an ImGui window placed beside
 the bead's screen point every frame (clamped into the window; a pinned popup whose
 bead is off-screen parks at the right edge). It opens on hover and stays while the
-mouse is on the bead or on the popup (`kPopupMargin` around it, `kPopupGrace` of slack
-for the trip between), or for good while pinned (small `x`, or click the bead again,
-to unpin). Header: the name and type; then $W^u$ then $W^s$. Button faces are typeset
+mouse is on the bead or on the popup (`kPopupGrace` of slack only for the trip from
+the bead; once the mouse has been on it, `popupEntered`, leaving closes it at once), or
+for good while pinned (small `x`, or click the bead again, to unpin). Header: the name
+and type; a `Ball` button + radius slider (`eqBallRadius`): a ball of trajectories
+around $x^*$ via `dropBall` (the panel's particle count / fill volume, stacks up to
+`kMaxBalls`); then $W^u$ then $W^s$, each header with a `ball` button
+(`dropManifoldBall`: `ballCount` seeds $x^* + K(\theta)$ on $W_{loc}$ within
+$\min(\texttt{eqBallRadius}, r)$ — evenly on the segment, a sunflower on the disk — in
+the side's color). Button faces are typeset
 with [[LatexImage]] (`latexButton`: an `ImageButton` of the cached texture, a plain
 text button if the typesetting fails), `tex()` caches every label by string, size
 and color. Per side: `Grow W_loc` → (grown) `r = ` trusted radius, then for a curve
@@ -97,8 +114,10 @@ branch ($W^s(C_\pm)$) slows to the speed cap and stops at the freeze distance, s
 camera never chases it off to infinity.
 
 `render`: beads, axes, glyphs (no depth writes), `renderLocalManifolds` (curves as
-lines `width` px drawn up to `grow`; surfaces as a `surface opacity` fill without
-depth writes plus the current edge ring), trails and heads, `renderBranches` (the
+lines `width` px drawn up to `grow`; surfaces through `surface_vertex.glsl`, which
+scales the unit disk by $r \cdot$ `grow` and applies $K$ per vertex — `hInv` of the
+equilibrium's [[ConjugacyMap]], exactly $K$ on $E$ — so the surface grows continuously:
+a `surface opacity` fill without depth writes plus the edge ring), trails and heads, `renderBranches` (the
 branch curve and a bead at its tip, `width` px), halos.
 
 **Clip planes** (`fitClipPlanes`, every frame): the far plane reaches past the whole
@@ -107,8 +126,9 @@ shrinks the picture instead of clipping it away (it used to sit at a fixed 600).
 near plane is left at the shared [[Camera]]'s default.
 
 ## Modules attached
-- [[InvariantManifold]] — $K$ of each side at each equilibrium; `maxRelDefect` for the
+- [[InvariantManifold]] — $K$ of each side at each equilibrium; `relDefectBelow` for the
   trusted radius; `orthoBasis`/`toParam`/`eval` for the patch and the branch seeds.
+- [[ConjugacyMap]] — $K_s + K_u$ on the GPU: the vertex stage of the 2-D local manifolds.
 - [[LorenzSystem]] — the field (ODE rhs, jet, glyph sampling), equilibria, Jacobians,
   the quadratic part for $K$.
 - [[Eigen3]] — type of each linearization (popup header).

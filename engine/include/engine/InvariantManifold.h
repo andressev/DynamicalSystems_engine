@@ -59,6 +59,9 @@ public:
     // largest defect relative to |f| there.
     double defect(const Param& s) const;
     double maxRelDefect(double r, int samples = 64) const;
+    // maxRelDefect(r, samples) < tol, exactly, but stops at the first sample at or over
+    // tol — for searches that only need the verdict (a trusted-radius bisection).
+    bool relDefectBelow(double r, double tol, int samples = 64) const;
 
     // Smallest |mu - lambda_j| over every solved order (mu = alpha . lambda) and every
     // eigenvalue of A: the small divisor. Near 0 = near-resonance, coefficients blow up.
@@ -72,6 +75,8 @@ private:
     int idx(int m, int j) const { return m * (n + 1) + j; }
     void vars(const Param& s, cd& w1, cd& w2) const;
     Vec3 field(const Vec3& u) const;   // A u + Q(u, u)
+    double defectAndField(const Param& s, double& fieldNorm) const;   // defect, |f(K(s))|
+    Param sphereParam(double r, int i, int count) const;   // maxRelDefect's sample i
 
     int k = 0, n = 0;
     bool pair = false;

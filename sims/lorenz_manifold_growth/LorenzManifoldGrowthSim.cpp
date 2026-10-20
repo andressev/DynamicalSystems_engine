@@ -3,6 +3,7 @@
 #include <engine/App.h>
 #include <engine/ArrowGlyphs.h>
 #include <engine/Camera.h>
+#include <engine/ConjugacyMap.h>
 #include <engine/FlowKeys.h>
 #include <engine/TrajectoryRunner.h>
 #include <engine/Eigen3.h>
@@ -29,9 +30,11 @@
 #include <execution>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <map>
 #include <memory>
 #include <random>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -60,7 +63,6 @@ constexpr int kRings = 28, kSegs = 96;    // the disk of a 2-D local manifold
 constexpr int kLocalCapacity = kRings * kSegs * 6 + (kRings + 1) * kSegs + 8;
 constexpr int kBranchPoints = 120000;     // a global branch keeps its whole curve
 constexpr float kPopupGrace = 0.4f;       // seconds off bead and popup before it closes
-constexpr float kPopupMargin = 14.0f;     // px around the popup still "on" it
 constexpr float kReturnSeconds = 1.0f;    // camera ease back when a follow ends
 // "Learn geodesic level sets": zoom onto the patch, then switch to that sim
 const char* kLevelSetsSim = "learn_geodesic_level_sets";
@@ -77,6 +79,26 @@ void sectionHeader(const char* title)
     ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(1.0f, 0.36f, 0.30f, 0.45f));
     ImGui::SeparatorText(title);
     ImGui::PopStyleColor(2);
+}
+
+// A shader source with the line holding `marker` replaced by `insert` (ConjugacyMap's
+// GLSL goes into the surface vertex shader this way).
+std::string loadWithInsert(const char* path, const char* marker, const std::string& insert)
+{
+    std::ifstream in(path);
+    std::stringstream ss;
+    ss << in.rdbuf();
+    std::string src = ss.str();
+    size_t at = src.find(marker);
+    if (at != std::string::npos)
+    {
+        size_t lineStart = src.rfind('\n', at);
+        size_t lineEnd = src.find('\n', at);
+        lineStart = lineStart == std::string::npos ? 0 : lineStart + 1;
+        src.replace(lineStart, (lineEnd == std::string::npos ? src.size() : lineEnd) - lineStart,
+                    insert);
+    }
+    return src;
 }
 
 // Number for typeset labels: 2 decimals, trailing zeros dropped (2.50 -> 2.5, 2.00 -> 2).
@@ -159,6 +181,7 @@ struct Settings {
     int ballCount = 200;
     bool ballFilled = false;
     bool ballWithSingle = false;  // drop a followable single at the ball's centre too
+    float eqBallRadius = 1.0f;    // popup balls: around x*, and on W_loc (capped at its r)
     bool followSingle = false;    // the orbit camera tracks the newest single
 
     float spawnDepth = 0.3f;      // click seeds: fraction of camera -> orbit center
@@ -225,6 +248,7 @@ std::vector<Setting> settingsTable(Settings& s)
         {"ballCount", nullptr, &s.ballCount},
         {"ballFilled", nullptr, nullptr, &s.ballFilled},
         {"ballWithSingle", nullptr, nullptr, &s.ballWithSingle},
+        {"eqBallRadius", &s.eqBallRadius},
         {"followSingle", nullptr, nullptr, &s.followSingle},
         {"spawnDepth", &s.spawnDepth}, {"singleScale", &s.singleScale},
         {"showTimeLabels", nullptr, nullptr, &s.showTimeLabels},
@@ -301,8 +325,9 @@ void loadSettingsFile(Settings& s, const char* path)
     s.taylorTolExp = std::clamp(s.taylorTolExp, 4, 16);
     s.maxStep = std::clamp(s.maxStep, 1e-5f, 0.5f);
     s.followSeconds = std::clamp(s.followSeconds, 0.0f, 10.0f);
-    s.manifoldOrder = std::clamp(s.manifoldOrder, 2, 30);
+    s.manifoldOrder = std::clamp(s.manifoldOrder, 2, engine::ConjugacyMap::kMaxOrder);
     s.locGrowSeconds = std::clamp(s.locGrowSeconds, 0.05f, 10.0f);
+    s.eqBallRadius = std::clamp(s.eqBallRadius, 0.01f, 20.0f);
     s.manifoldWidth = std::clamp(s.manifoldWidth, 1.0f, 8.0f);
     s.diskAlpha = std::clamp(s.diskAlpha, 0.02f, 1.0f);
     s.branchTime = std::clamp(s.branchTime, 0.1f, 1000.0f);
@@ -332,6 +357,11 @@ public:
                                 SIMS_DIR "lorenz_manifold_growth/shaders/fragment.glsl");
         eqShader = engine::Shader(SIMS_DIR "lorenz_manifold_growth/shaders/equilibrium_vertex.glsl",
                                   SIMS_DIR "lorenz_manifold_growth/shaders/equilibrium_fragment.glsl");
+        surfaceShader = engine::Shader::fromSources(
+            loadWithInsert(SIMS_DIR "lorenz_manifold_growth/shaders/surface_vertex.glsl",
+                           "@CONJUGACY_MAP", engine::ConjugacyMap::glsl()),
+            loadWithInsert(SIMS_DIR "lorenz_manifold_growth/shaders/fragment.glsl", "@none", ""));
+        surfaceShader.bindUniformBlock(engine::ConjugacyMap::kBlockName, engine::ConjugacyMap::kBinding);
         axisMesh = std::make_unique<engine::Mesh>(engine::Shapes::axisVertices(1000.0f),
                                                   engine::Shapes::axisIndices(),
                                                   std::vector<int>{3});
@@ -364,12 +394,13 @@ public:
             cfg.sigma = (float)value("sigma", cfg.sigma);
             cfg.rho = (float)value("rho", cfg.rho);
             cfg.beta = (float)value("beta", cfg.beta);
-            cfg.manifoldOrder = std::clamp((int)value("order", cfg.manifoldOrder), 2, 30);
+            cfg.manifoldOrder = std::clamp((int)value("order", cfg.manifoldOrder), 2, engine::ConjugacyMap::kMaxOrder);
         }
         else
             applyCamera();
         fitClipPlanes(cam);
         applyParams();
+        computeManifoldsNow();   // at open the wait is part of loading
         if (back)
         {
             const int mask = (int)value("loc", 0.0);
@@ -477,9 +508,11 @@ public:
             for (int side = 0; side < 2; ++side)
             {
                 Side& S = eqs[i].side[side];
-                if (S.local && S.grow < 1.0f)
+                if (eqs[i].ready && S.local && S.grow < 1.0f)
                     S.grow = std::min(1.0f, S.grow + dt / std::max(cfg.locGrowSeconds, 0.05f));
             }
+
+        pollManifolds();
 
         updateCamera(dt);
         sceneFade = currentSceneFade();
@@ -595,7 +628,8 @@ public:
             glDepthMask(GL_TRUE);
         }
 
-        renderLocalManifolds(px);
+        renderLocalManifolds(view, projection, px);
+        shader.use();
 
         runner.beginDraw();
         for (const Curve& c : curves)
@@ -758,6 +792,19 @@ private:
         glm::vec3 end[2]{};               // world ends of a 1-D W_loc, + then -
     };
 
+    // A worker's output for one equilibrium (computeManifolds): K on each side and the
+    // radius it is trusted to.
+    using Matrix3 = std::array<std::array<double, 3>, 3>;
+    struct SideResult {
+        engine::InvariantManifold K;
+        bool ok = false;
+        std::string error;
+        double radius = 0.0;
+    };
+    struct EqResult {
+        SideResult side[2];
+    };
+
     // One equilibrium as drawn: where it is, its linearization, its hover state, its
     // manifolds.
     struct EqView {
@@ -770,6 +817,12 @@ private:
         std::string labelTex;           // "O", "C_+", "C_-"
         float labelSize = 0.0f;
         Side side[2];                   // kStable, kUnstable
+        // the manifolds are computed off the main thread (pollManifolds): until then the
+        // sides hold nothing for this field and cannot be grown
+        bool ready = false;
+        std::future<EqResult> job;
+        int jobGen = -1;                // manifoldGen the job was started for
+        engine::ConjugacyMap map;       // K_s + K_u on the GPU: the surfaces' vertex shader
     };
 
     // The eased camera move: centre and radius from -> to (radius interpolated in log),
@@ -788,8 +841,11 @@ private:
         sectionHeader("Lorenz system");
         bool changed = false;
         changed |= ImGui::DragFloat("sigma", &cfg.sigma, 0.05f, 0.01f, 100.0f, "%.3f");
+        paramsDragging |= ImGui::IsItemActive();
         changed |= ImGui::DragFloat("rho", &cfg.rho, 0.05f, 0.0f, 300.0f, "%.3f");
+        paramsDragging |= ImGui::IsItemActive();
         changed |= ImGui::DragFloat("beta", &cfg.beta, 0.01f, 0.01f, 50.0f, "%.4f");
+        paramsDragging |= ImGui::IsItemActive();
         if (ImGui::Button("Classic (10, 28, 8/3)"))
         {
             cfg.sigma = 10.0f;
@@ -842,7 +898,7 @@ private:
         ImGui::SetNextItemWidth(160.0f);
         if (ImGui::InputInt("K order", &cfg.manifoldOrder))
         {
-            cfg.manifoldOrder = std::clamp(cfg.manifoldOrder, 2, 30);
+            cfg.manifoldOrder = std::clamp(cfg.manifoldOrder, 2, engine::ConjugacyMap::kMaxOrder);
             rebuildManifolds();
         }
         ImGui::SliderFloat("growth time", &cfg.locGrowSeconds, 0.1f, 5.0f, "%.1f s");
@@ -1090,6 +1146,7 @@ private:
             popupEq = i;
             popupPinned = true;
             popupAway = 0.0f;
+            popupEntered = false;
         }
     }
 
@@ -1097,6 +1154,7 @@ private:
     {
         popupEq = -1;
         popupPinned = false;
+        popupEntered = false;
         popupAway = 0.0f;
         popupW = popupH = 0.0f;
     }
@@ -1121,6 +1179,7 @@ private:
         {
             popupEq = hovered;
             popupAway = 0.0f;
+            popupEntered = false;
         }
         if (popupEq < 0)
             return;
@@ -1132,13 +1191,17 @@ private:
         EqView& e = eqs[popupEq];
 
         const bool onPopup = popupW > 0.0f &&
-                             io.MousePos.x >= popupX - kPopupMargin && io.MousePos.x < popupX + popupW + kPopupMargin &&
-                             io.MousePos.y >= popupY - kPopupMargin && io.MousePos.y < popupY + popupH + kPopupMargin;
+                             io.MousePos.x >= popupX && io.MousePos.x < popupX + popupW &&
+                             io.MousePos.y >= popupY && io.MousePos.y < popupY + popupH;
+        popupEntered = popupEntered || onPopup;
         if (hovered == popupEq || onPopup || popupPinned)
             popupAway = 0.0f;
         else
             popupAway += dt;
-        if (!popupPinned && popupAway > kPopupGrace)
+        // kPopupGrace only covers the trip from the bead to the popup: once the mouse has
+        // been on it, leaving it (not back onto the bead) closes it at once
+        const float grace = popupEntered ? 0.0f : kPopupGrace;
+        if (!popupPinned && popupAway > grace)
         {
             closePopup();
             return;
@@ -1186,6 +1249,13 @@ private:
                 return;
             }
         }
+        // a ball of trajectories around x* (the panel's particle count / fill volume)
+        if (ImGui::SmallButton("Ball"))
+            dropBall(e.pos, cfg.eqBallRadius, false, false);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(120.0f);
+        ImGui::SliderFloat("##eqBall", &cfg.eqBallRadius, 0.01f, 20.0f, "r = %.2f",
+                           ImGuiSliderFlags_Logarithmic);
         drawSideSection(popupEq, kUnstable);
         drawSideSection(popupEq, kStable);
         ImGui::End();
@@ -1206,7 +1276,19 @@ private:
         else
             head.draw();
         ImGui::SameLine();
+        if (!e.ready)
+        {
+            ImGui::TextDisabled("computing...");   // nothing to grow until it lands
+            ImGui::PopID();
+            return;
+        }
         ImGui::TextDisabled("%s", S.dim == 1 ? "curve" : S.dim == 2 ? "surface" : "");
+        if (S.ok)
+        {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("ball"))
+                dropManifoldBall(e, side);
+        }
 
         if (!S.ok)
             ImGui::TextDisabled("%s", S.error.c_str());
@@ -1293,60 +1375,137 @@ private:
 
     // ---- manifolds -------------------------------------------------------------------
 
-    // K for both sides of every equilibrium (and the radius each is trusted to), keeping
-    // what is grown where the side still exists; the global branches belong to the old
-    // field and go.
+    // New field or K order: every equilibrium's manifolds are stale. The global branches
+    // belong to the old field and go; what is grown locally stays chosen and reappears
+    // once its side is recomputed (pollManifolds).
     void rebuildManifolds()
     {
+        ++manifoldGen;
+        for (int i = 0; i < (int)eqs.size(); ++i)
+        {
+            eqs[i].ready = false;
+            for (int side = 0; side < 2; ++side)
+            {
+                dropBranches(i, side);
+                if (i >= eqCount)
+                    eqs[i].side[side].local = eqs[i].side[side].ok = false;
+            }
+        }
+    }
+
+    // One equilibrium's manifolds for one field: K on both sides and the radius each is
+    // trusted to — both the smaller trusted one, so neither reaches past the other (at
+    // C+- the curve would go 10x the surface). Pure computation: runs on a worker.
+    static EqResult computeManifolds(Matrix3 Jm, int order)
+    {
+        double J[3][3];
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c)
+                J[r][c] = Jm[r][c];
         const auto Q = engine::LorenzSystem::quadratic();
-        for (int i = 0; i < eqCount; ++i)
+        EqResult out;
+        double common = 1e30;
+        for (int side = 0; side < 2; ++side)
+        {
+            SideResult& S = out.side[side];
+            S.ok = S.K.build(J, Q, side == kStable ? engine::InvariantManifold::Side::Stable
+                                                   : engine::InvariantManifold::Side::Unstable,
+                             order);
+            S.error = S.ok ? std::string() : S.K.error();
+            if (S.ok)
+                common = std::min(common, trustedRadius(S.K));
+        }
+        for (SideResult& S : out.side)
+            S.radius = S.ok ? common : 0.0;
+        return out;
+    }
+
+    Matrix3 jacobianAt(const EqView& e) const
+    {
+        double J[3][3];
+        system.jacobian(e.eq.x, J);
+        Matrix3 Jm;
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c)
+                Jm[r][c] = J[r][c];
+        return Jm;
+    }
+
+    // Finished workers: apply results for the current field, drop older ones. A stale
+    // equilibrium gets a worker once the parameters are still (none while a slider is
+    // held), so dragging only moves the field and the equilibria.
+    void pollManifolds()
+    {
+        for (int i = 0; i < (int)eqs.size(); ++i)
         {
             EqView& e = eqs[i];
-            double J[3][3];
-            system.jacobian(e.eq.x, J);
-            for (int side = 0; side < 2; ++side)
+            if (e.job.valid() && e.job.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
             {
-                Side& S = e.side[side];
-                dropBranches(i, side);
-                S.ok = S.K.build(J, Q, side == kStable ? engine::InvariantManifold::Side::Stable
-                                                       : engine::InvariantManifold::Side::Unstable,
-                                 cfg.manifoldOrder);
-                S.dim = S.ok ? S.K.dim() : 0;
-                S.error = S.ok ? std::string() : S.K.error();
-                S.radius = S.ok ? trustedRadius(S.K) : 0.0;
-                if (!S.ok)
-                    S.local = false;
+                EqResult r = e.job.get();
+                if (e.jobGen == manifoldGen && i < eqCount)
+                    applyManifolds(e, std::move(r));
             }
-            // both local manifolds of one x* share a radius: the smaller trusted one, so
-            // neither reaches past the other (at C+- the curve would go 10x the surface)
-            double common = 1e30;
-            for (const Side& S : e.side)
-                if (S.ok)
-                    common = std::min(common, S.radius);
-            for (int side = 0; side < 2; ++side)
-                if (e.side[side].ok)
-                {
-                    e.side[side].radius = common;
-                    buildLocal(e, side);
-                }
+            if (i < eqCount && !e.ready && !e.job.valid() && !paramsDragging)
+            {
+                e.jobGen = manifoldGen;
+                e.job = std::async(std::launch::async, computeManifolds, jacobianAt(e), cfg.manifoldOrder);
+            }
         }
-        for (int i = eqCount; i < (int)eqs.size(); ++i)
-            for (int side = 0; side < 2; ++side)
-            {
-                dropBranches(i, side);
-                eqs[i].side[side].local = eqs[i].side[side].ok = false;
-            }
+        paramsDragging = false;   // drawSystemUI sets it again while a slider is held
+    }
+
+    // At open: every equilibrium on this thread (the handoff back needs S.ok at once).
+    void computeManifoldsNow()
+    {
+        for (int i = 0; i < eqCount; ++i)
+            applyManifolds(eqs[i], computeManifolds(jacobianAt(eqs[i]), cfg.manifoldOrder));
+    }
+
+    // A worker's result into the sides: K, radius, meshes. Surfaces are drawn through
+    // the conjugacy map (x* + K(theta) in the vertex shader), which needs both sides.
+    void applyManifolds(EqView& e, EqResult r)
+    {
+        bool surface = false;
+        for (int side = 0; side < 2; ++side)
+        {
+            Side& S = e.side[side];
+            SideResult& R = r.side[side];
+            S.K = std::move(R.K);
+            S.ok = R.ok;
+            S.dim = S.ok ? S.K.dim() : 0;
+            S.error = R.error;
+            S.radius = R.radius;
+            surface = surface || S.dim == 2;
+        }
+        if (surface && !(e.side[0].ok && e.side[1].ok && e.map.set(e.side[0].K, e.side[1].K)))
+            for (Side& S : e.side)
+                if (S.dim == 2)
+                {
+                    S.ok = false;
+                    S.dim = 0;
+                    S.error = "no conjugacy map: " + e.map.error();
+                }
+        for (int side = 0; side < 2; ++side)
+        {
+            if (!e.side[side].ok)
+                e.side[side].local = false;
+            else
+                buildLocal(e, side);
+        }
+        e.ready = true;
     }
 
     // Largest |theta| (bisection up to kRadiusSearchMax) where K's relative invariance
     // defect stays under kDefectOk all the way out: how far W_loc is drawn.
     static double trustedRadius(const engine::InvariantManifold& K)
     {
+        // every radius out to r under the bar, checked in parallel (outermost first: it
+        // fails most often, and a failure stops the rest)
         auto good = [&](double r) {
-            for (int j = 1; j <= 8; ++j)
-                if (K.maxRelDefect(r * j / 8.0, 48) >= kDefectOk)
-                    return false;
-            return true;
+            static const int js[8] = {8, 7, 6, 5, 4, 3, 2, 1};
+            return std::none_of(std::execution::par, js, js + 8, [&](int j) {
+                return !K.relDefectBelow(r * j / 8.0, kDefectOk, 48);
+            });
         };
         double lo = 0.0, hi = kRadiusSearchMax;
         if (good(hi))
@@ -1368,8 +1527,9 @@ private:
     }
 
     // The mesh of W_loc: a curve as two strips of kCurveSteps + 1 points from x* out to
-    // +-radius along E; a surface as a disk of rings x segments of triangles, followed
-    // by every ring as a loop (the growing edge is drawn with the rings shown so far).
+    // +-radius along E (K on the CPU); a surface as the unit disk of E in rings x
+    // segments of triangles, followed by every ring as a loop — surface_vertex.glsl
+    // scales it to the grown radius and pushes it through K (ConjugacyMap::hInv).
     void buildLocal(EqView& e, int side)
     {
         Side& S = e.side[side];
@@ -1399,9 +1559,8 @@ private:
                 for (int k = 0; k < kSegs; ++k)
                 {
                     const float a = 6.2831853f * (float)k / kSegs;
-                    const float rr = r * (float)ring / kRings;
-                    pts[(size_t)ring * kSegs + k] =
-                        e.pos + kPoint(S, rr * (std::cos(a) * e0 + std::sin(a) * e1));
+                    const float rr = (float)ring / kRings;   // theta / r: K is applied on the GPU
+                    pts[(size_t)ring * kSegs + k] = rr * (std::cos(a) * e0 + std::sin(a) * e1);
                 }
             auto at = [&](int ring, int k) { return pts[(size_t)ring * kSegs + (k % kSegs)]; };
             for (int ring = 0; ring < kRings; ++ring)
@@ -1515,7 +1674,7 @@ private:
 
     // W_loc of every grown side, as far as it has grown: curves as lines, surfaces as a
     // translucent fill (no depth writes) with the current edge ring on top.
-    void renderLocalManifolds(float px)
+    void renderLocalManifolds(const glm::mat4& view, const glm::mat4& projection, float px)
     {
         shader.setInt("u_useRamp", 0);
         shader.setInt("u_useFade", 0);
@@ -1525,7 +1684,7 @@ private:
             for (int side = 0; side < 2; ++side)
             {
                 const Side& S = eqs[i].side[side];
-                if (!S.local || !S.ok || !S.mesh)
+                if (!eqs[i].ready || !S.local || !S.ok || !S.mesh || S.dim != 1)
                     continue;
                 const glm::vec3 color = side == kStable ? kStableColor : kUnstableColor;
                 const float fade = i == focusEq && side == focusSide ? 1.0f : sceneFade;
@@ -1538,22 +1697,36 @@ private:
                     S.mesh->drawArrays(GL_LINE_STRIP, n, 0);
                     S.mesh->drawArrays(GL_LINE_STRIP, n, kCurveSteps + 1);
                 }
-                else if (S.dim == 2)
-                {
-                    const int rings = std::clamp((int)std::floor(S.grow * kRings), 0, kRings);
-                    if (rings > 0)
-                    {
-                        glDepthMask(GL_FALSE);
-                        shader.setFloat("u_alpha", cfg.diskAlpha * fade);
-                        S.mesh->drawArrays(GL_TRIANGLES, rings * kSegs * 6, 0);
-                        glDepthMask(GL_TRUE);
-                    }
-                    shader.setFloat("u_alpha", 0.9f * fade);
-                    glLineWidth(0.7f * cfg.manifoldWidth * px);
-                    S.mesh->drawArrays(GL_LINE_LOOP, kSegs, S.fillCount + rings * kSegs);
-                }
             }
         shader.setFloat("u_alpha", 1.0f);
+
+        // surfaces: the whole disk at the grown radius, so it grows continuously
+        surfaceShader.use();
+        surfaceShader.setMat4("view", view);
+        surfaceShader.setMat4("projection", projection);
+        surfaceShader.setInt("u_useRamp", 0);
+        surfaceShader.setInt("u_round", 0);
+        surfaceShader.setFloat("u_alphaTail", 1.0f);
+        for (int i = 0; i < eqCount; ++i)
+            for (int side = 0; side < 2; ++side)
+            {
+                const EqView& e = eqs[i];
+                const Side& S = e.side[side];
+                if (!e.ready || !S.local || !S.ok || !S.mesh || S.dim != 2)
+                    continue;
+                const float fade = i == focusEq && side == focusSide ? 1.0f : sceneFade;
+                e.map.bind();
+                surfaceShader.setVec3("u_color", side == kStable ? kStableColor : kUnstableColor);
+                surfaceShader.setVec3("u_center", e.pos);
+                surfaceShader.setFloat("u_radius", (float)S.radius * S.grow);
+                glDepthMask(GL_FALSE);
+                surfaceShader.setFloat("u_alpha", cfg.diskAlpha * fade);
+                S.mesh->drawArrays(GL_TRIANGLES, S.fillCount, 0);
+                glDepthMask(GL_TRUE);
+                surfaceShader.setFloat("u_alpha", 0.9f * fade);
+                glLineWidth(0.7f * cfg.manifoldWidth * px);
+                S.mesh->drawArrays(GL_LINE_LOOP, kSegs, S.fillCount + kRings * kSegs);   // the edge
+            }
         glLineWidth(1.0f);
     }
 
@@ -1592,7 +1765,7 @@ private:
             for (int side = 0; side < 2; ++side)
             {
                 const Side& S = eqs[i].side[side];
-                if (!S.local || !S.ok || !std::isfinite(S.labelAnchor.x))
+                if (!eqs[i].ready || !S.local || !S.ok || !std::isfinite(S.labelAnchor.x))
                     continue;
                 float sx, sy;
                 if (!toScreen(S.labelAnchor, sx, sy))
@@ -2166,6 +2339,46 @@ private:
             trimBalls();
     }
 
+    // A ball of trajectories lying on W_loc: x* + K(theta) for theta in E within
+    // min(eqBallRadius, trusted r) — evenly along the segment for a curve, a sunflower
+    // over the disk for a surface — in the side's color, one ball like dropBall's.
+    void dropManifoldBall(const EqView& e, int side)
+    {
+        const Side& S = e.side[side];
+        if (!S.ok || S.dim < 1)
+            return;
+        const float rr = std::min(cfg.eqBallRadius, (float)S.radius);
+        const glm::vec3 color = side == kStable ? kStableColor : kUnstableColor;
+        auto o0 = S.K.orthoBasis(0);
+        const glm::vec3 e0((float)o0[0], (float)o0[1], (float)o0[2]);
+        glm::vec3 e1(0.0f);
+        if (S.dim == 2)
+        {
+            auto o1 = S.K.orthoBasis(1);
+            e1 = glm::vec3((float)o1[0], (float)o1[1], (float)o1[2]);
+        }
+        const size_t first = curves.size();
+        const float golden = 2.39996323f;
+        const int n = std::max(cfg.ballCount, 2);
+        for (int k = 0; k < n && curves.size() < kMaxTrajectories; ++k)
+        {
+            glm::vec3 theta;
+            if (S.dim == 1)
+                theta = rr * (2.0f * (float)k / (float)(n - 1) - 1.0f) * e0;
+            else
+            {
+                const float rad = rr * std::sqrt(((float)k + 0.5f) / (float)n);
+                const float a = golden * (float)k;
+                theta = rad * (std::cos(a) * e0 + std::sin(a) * e1);
+            }
+            addTrajectory(e.pos + kPoint(S, theta), color, Kind::Ball);
+        }
+        const int id = nextBallId++;
+        for (size_t i = first; i < curves.size(); ++i)
+            curves[i].ball = id;
+        trimBalls();
+    }
+
     // Keep the newest kMaxBalls balls (each with its centre single, if any).
     void trimBalls()
     {
@@ -2237,6 +2450,7 @@ private:
     engine::App* app = nullptr;
     engine::Shader shader;      // glyphs, trails, axes, manifolds (vector_field's pair)
     engine::Shader eqShader;    // equilibrium beads + halos
+    engine::Shader surfaceShader;   // 2-D local manifolds: K in the vertex stage
     std::unique_ptr<engine::Mesh> axisMesh;
     std::unique_ptr<engine::Mesh> sphereMesh;
     engine::ArrowGlyphs glyphs;
@@ -2259,6 +2473,8 @@ private:
 
     std::array<EqView, 3> eqs;
     int eqCount = 0;
+    int manifoldGen = 0;           // bumped by every new field / K order (stale workers drop)
+    bool paramsDragging = false;   // a sigma/rho/beta slider is held (no workers yet)
     int hovered = -1;           // bead under the cursor (or its UI row), this frame
     int uiHovered = -1;
     float clock = 0.0f;         // drives the halo pulse
@@ -2267,6 +2483,7 @@ private:
     int popupEq = -1;
     bool popupPinned = false;
     float popupAway = 0.0f;     // seconds the mouse has been off bead and popup
+    bool popupEntered = false;  // the mouse has been on the popup since it opened
     float popupX = 0.0f, popupY = 0.0f, popupW = 0.0f, popupH = 0.0f;
     std::map<std::string, engine::LatexImage> texCache;
 

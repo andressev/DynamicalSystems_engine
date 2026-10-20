@@ -38,13 +38,13 @@ restricted to $E^s$ and $E^u$ (see [[roadmap]]).
    `x = x* + eval(toParam(theta))`. Flow it linearly: `flowParam(s, t)` $= e^{\Lambda t}s$.
    `linear(s)` $= Bs$ is the inverse of `toParam` on $E$.
 4. Validity: `maxRelDefect(r)` — worst relative invariance defect on the sphere of
-   radius $r$ in $E$; `minDivisor()` — the smallest $|\mu - \lambda_j|$ met, the
+   radius $r$ in $E$; `relDefectBelow(r, tol)` — the same verdict as `maxRelDefect(r) < tol`, stopping at the first sample over (for radius searches); `minDivisor()` — the smallest $|\mu - \lambda_j|$ met, the
    resonance warning.
 5. Reference: `tests/math_tests.cpp`; first sim user will be the Lorenz equilibrium sim.
 
 Interface: `build`, `valid`, `error`, `dim`, `order`, `complexPair`, `eigenvalue(i)`,
 `eigen()`, `eval`, `linear`, `toParam`, `flowParam`, `basis(i)`, `orthoBasis(i)`,
-`defect`, `maxRelDefect`, `minDivisor`, `coeff(m, j)`.
+`defect`, `maxRelDefect`, `relDefectBelow`, `minDivisor`, `coeff(m, j)`.
 
 ## Notes
 - **Coordinates.** $s$ is chosen so $DK(0)$ is the identity on $E$: $K(s) = Bs + O(|s|^2)$

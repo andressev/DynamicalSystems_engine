@@ -661,7 +661,20 @@ public:
         drawHgLabels();
         drawHgPairLabels();
 
-        // 2: arrow field on/off (no follow camera in this sim, so no key 1)
+        // 1 tapped (conjugacy up): camera default -> on U -> on V -> default, the same
+        // views as the buttons and the hold-1 recenter (held, App calls recenterCamera)
+        if (!io.WantCaptureKeyboard && hgActive &&
+            (engine::FlowKeys::tapHold(ImGuiKey_1, dt, engine::App::kRecenterHoldSeconds).tapped ||
+             engine::FlowKeys::tapHold(ImGuiKey_Keypad1, dt, engine::App::kRecenterHoldSeconds).tapped))
+        {
+            if (camAimTo == 0.0f)
+                aimCamera(1.0f, 3.2f * cfg.hgRadius);
+            else if (camAimTo > 0.0f)
+                aimCamera(-1.0f, 3.2f * cfg.hgRadius);
+            else
+                recenterCamera();
+        }
+        // 2: arrow field on/off
         if (!io.WantCaptureKeyboard && (ImGui::IsKeyPressed(ImGuiKey_2, false) || ImGui::IsKeyPressed(ImGuiKey_Keypad2, false)))
             cfg.showArrows = !cfg.showArrows;
         // the arrow field fades in/out instead of cutting (key 2 or the checkbox)
