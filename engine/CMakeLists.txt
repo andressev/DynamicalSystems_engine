@@ -11,6 +11,7 @@ add_library(engine STATIC
     "src/Integrator.cpp"
     "src/Eigen3.cpp"
     "src/InvariantManifold.cpp"
+    "src/LevelSetSurface.cpp"
     "src/LorenzSystem.cpp"
     "src/TaylorIntegrator.cpp"
     "src/ConjugacyMap.cpp"

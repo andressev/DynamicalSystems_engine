@@ -5,6 +5,8 @@ code:
   - sims/learn_geodesic_level_sets/LearnGeodesicLevelSetsSim.cpp
   - sims/learn_geodesic_level_sets/shaders/vertex.glsl
   - sims/learn_geodesic_level_sets/shaders/fragment.glsl
+  - sims/learn_geodesic_level_sets/shaders/band_vertex.glsl
+  - sims/learn_geodesic_level_sets/shaders/band_fragment.glsl
   - sims/learn_geodesic_level_sets/shaders/equilibrium_vertex.glsl
   - sims/learn_geodesic_level_sets/shaders/equilibrium_fragment.glsl
 ---
@@ -67,18 +69,18 @@ $x^* + K(r(\cos a\, e_0 + \sin a\, e_1))$ (`edgePoint`, not the mesh's polygon).
 and drag slides it along the edge (`slideBall`): the cursor is projected onto each
 segment between edge samples (`kEdgeSamples`) within `kBallStep` of the ball's current
 angle, so the ball moves continuously and never leaps to another stretch of the edge
-that passes near the cursor on screen. A double click (or **Launch**) starts a particle there,
+that passes near the cursor on screen. A click — released before the mouse moves `kBallDragPixels` (4 px) — or **Launch** starts a particle there,
 integrated with the [[TaylorIntegrator]] in the manifold's own direction of time —
 **backward on $W^s$** (into the past, away from $x^*$), forward on $W^u$. Arrows set the
 speed (log ramp, $10^{-6}$ to 1 field time per second, default $5 \cdot 10^{-4}$: the
 step past the edge is small) and flip the direction against that; **Space** pauses,
-**R** clears. On the ball a click is the ball's, so it never picks $r$.
+**R** clears. From a press on the ball until its release the mouse is the ball's (`ballPressed`), so it never picks or solves at an edge vertex — not even when the dragged ball slides out from under the cursor.
 **Shoot r → ball** (once $r$ is chosen) launches `shootCount` particles (default 32)
 evenly along the edge from $r$ to the ball, the shorter way round, as one batch;
 `renderFronts` joins their heads in order (a stopped one at its $b_r$), so the edge arc
 is seen as the flow carries it. The shot's first particle starts at $r$, already in
 $\mathcal{F}_r$: it is a hit at once ($b_r = r$, $\tau = 0$, distance 0) and never moves.
-**V** with the cursor on the ball shoots too. **B** (or **Whole edge**) sends a
+**V** shoots it too, wherever the cursor is (with no $r$ chosen it only says so in the status line). **B** (or **Whole edge**) sends a
 particle from every edge point at once (`shootRing`, at most `kMaxRing`, trails of
 `kRingPoints` points spaced `kRingSpacing` radii apart, ~10 radii long), in the manifold's direction of time, joined head to head as a closed
 loop — the ring tears into streaks almost at once (bunching at the cusp, stretching
@@ -130,11 +132,24 @@ drawing $\mathcal{F}_r$ and for the particles' hits.
 reached, every point re-cut to it on its stored branch; neighbours whose $r_{new}$ are
 more than maxSpread apart get the edge point midway solved too (`mids`). `renderBand`
 draws the triangles $r \to r^+ \to r_{new}$, $r^+ \to r^+_{new} \to r_{new}$ (three
-through a mid), their lines and the points. $\Delta_i$ joins the top-right readout; the
+through a mid), their lines and the points. $\Delta_i$ joins the top-right readout (whose second line, `angleLatex`, gives the §3.2
+angle bounds, all four shown in degrees — the panel sliders too — while settings and the
+method keep radians); the
 panel line gives $\tau$, $\|b - r\|$ and whether the branch broke or $\Delta_i$ fell
 below $\Delta_{\min}$. Measured at the classic parameters (debug): a whole first ring (156 points, 8
 mids) in 0.5 s at $\Delta_i = 1$, the next rings (164, 178 points) in about 0.1 s each.
 A new mesh, a new $\Delta_{\min}/\Delta_{\max}$, or **Clear solutions** drops them.
+
+**Accepted bands** are kept as a [[LevelSetSurface]] (`accepted`: per band its triangles,
+where each vertex grew from, and $\eta$ at its outer level set), appended to `bandsMesh`
+(`appendBand`) and drawn by `band_vertex.glsl` / `band_fragment.glsl` light blue and dark
+blue by turns (`kStableBand`; orange-reds on $W^u$), so each geodesic circle shows.
+**Save surface** (`saveSurface`, once rings are accepted and no run is going) writes them
+with the parameters, K order, equilibrium, side and radius to
+`lorenz_manifold_growth/data/surface_<O|Cp|Cm>_<s|u>.lss`, which [[lorenz-manifold-growth]]
+grows ([[0011-precomputed-level-set-surfaces]]). Stored: $W^s(O)$ at the classic
+parameters, Grow rings 400 from the default settings — it ran 98 rings to $\eta = 97$
+(~1 min, debug, 2162 edge points at the end) and stopped at "r_new grows backward".
 
 **The rest of the run** (growing ring after ring) comes as the user specifies it, and the next steps
 (one iteration) come from them.
@@ -171,6 +186,7 @@ view. While $r$ is shown, the $W^s_{\mathrm{loc}}$ label fades out.
 - [[InvariantManifold]] — $K$ of both sides; `maxRelDefect` for the trusted radius;
   `orthoBasis`/`toParam`/`eval` for the mesh vertices.
 - [[LorenzSystem]] — equilibria, Jacobian, the quadratic part for $K$.
+- [[LevelSetSurface]] — the accepted bands (`accepted`), written by **Save surface**.
 - [[Mesh]] / [[Shapes]] — the patch buffer (fill + edges + points), the edge-point
   overlay ($\mathcal{F}_r$, chord, $n$, points), axes, unit sphere.
 - [[Shader]] — the glyph pair (patch, edges, round vertices) and the bead pair, copied
@@ -196,7 +212,7 @@ view. While $r$ is shown, the $W^s_{\mathrm{loc}}$ label fades out.
 
 ## Controls / uniforms
 **Backspace** back to the flow, **M** mesh, **Space** / arrows particles (pause, speed,
-direction), **R** clear particles, **B** the whole edge flows, drag / double-click the green ball, **V** on it shoots $r$ → ball, hold **1** reframe the patch, **0**
+direction), **R** clear particles, **B** the whole edge flows, drag / click the green ball, **V** shoots $r$ → ball, hold **1** reframe the patch, **0**
 screenshot, **H** panel ([[App]]). Panel: **Local manifold** (equilibrium combo, trusted
 $r$, Back to the flow), **Mesh** (show mesh, rings, vertices per ring, counts),
 **Particles** (Play/Pause, speed, reverse, `ball` angle,

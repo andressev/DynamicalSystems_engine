@@ -6,6 +6,8 @@ code:
   - sims/lorenz_manifold_growth/shaders/vertex.glsl
   - sims/lorenz_manifold_growth/shaders/fragment.glsl
   - sims/lorenz_manifold_growth/shaders/surface_vertex.glsl
+  - sims/lorenz_manifold_growth/shaders/band_vertex.glsl
+  - sims/lorenz_manifold_growth/shaders/band_fragment.glsl
   - sims/lorenz_manifold_growth/shaders/equilibrium_vertex.glsl
   - sims/lorenz_manifold_growth/shaders/equilibrium_fragment.glsl
 ---
@@ -30,7 +32,17 @@ section offers **Grow $W^u(x^*)$**: for a *curve* (at the classic parameters $W^
 $W^s(C_\pm)$) the two ends of $W_{loc}$ flow on — forward in time on $W^u$, backward on
 $W^s$ — each as a trajectory that keeps its whole curve, so the manifold is the Taylor
 arc plus the orbits of its ends ([[global-manifold-growth]]). For a *surface* the global
-growth needs geodesic level sets and is **not available yet**: the button is disabled.
+manifold is grown ahead of time by geodesic level sets and stored
+([[0011-precomputed-level-set-surfaces]], [[LevelSetSurface]]): `loadStoredSurfaces` reads
+every `data/surface_<O|Cp|Cm>_<s|u>.lss` at init, and `storedFor` enables `Grow W` only
+when the file's tags match $\sigma, \rho, \beta$, K order, equilibrium and side (else the
+button is disabled — "classic parameters only" if a file exists, "not yet" if not).
+At the classic parameters $W^s(O)$ is stored out to geodesic distance $\eta = 97$ (98
+bands). Pressing it sets `global`; `shownEta` then grows at a steady geodesic speed, the
+whole surface in `surface growth time` (Pause/Resume, then Regrow). `renderSurfaces`
+draws every band up to the one holding `shownEta` with `band_vertex.glsl`: band $k$ at
+$\mathrm{clamp}(u_{grow} - k, 0, 1)$ slides its new points out from where they grew, and
+`band_fragment.glsl` colors bands light / dark blue by turns, so each geodesic circle shows.
 Next to it, **Learn geodesic level sets** zooms onto the patch ($3.2\,r$ away) while
 everything else fades (`enterLevelSets`, `sceneFade`), then switches to
 [[learn-geodesic-level-sets]] (`handOffLevelSets`, [[0009-sim-handoff-requestswitch]]):
@@ -74,7 +86,7 @@ flow's; the `reverse` flag does not retract a branch). Each side's branches stop
 
 **Backward curves** (`curveStep`, `advanceCurves` — every curve: balls, singles and
 branches). The Lorenz flow backward blows up in finite time (a $W^s(C_\pm)$ branch used
-to leave the screen in $pprox 0.09$ field time). Running backward, a curve's step is
+to leave the screen in $\approx 0.09$ field time). Running backward, a curve's step is
 scaled so its arc speed is at most `backward speed cap` (default 15 world units per
 field time) — a time change only, the traced curve is the same — and a curve farther
 than `pause beyond` $\times$ `domain radius` (default 12.5, about 375 units) from the cube's centre stands
@@ -113,12 +125,15 @@ detaches in place (watch off if watching, else the single follow toggles); holdi
 branch ($W^s(C_\pm)$) slows to the speed cap and stops at the freeze distance, so the
 camera never chases it off to infinity.
 
-`render`: beads, axes, glyphs (no depth writes), `renderLocalManifolds` (curves as
-lines `width` px drawn up to `grow`; surfaces through `surface_vertex.glsl`, which
+`render` — everything that writes depth first, then what only blends, so a curve
+behind a sheet shows through it tinted and one in front stays in front: beads, axes,
+`renderLocalCurves` (1-D $W_{loc}$ as lines `width` px drawn up to `grow`), trails and
+heads, `renderBranches` (the branch curve and a bead at its tip, `width` px), glyphs
+(no depth writes), `renderSurfaces` (2-D $W_{loc}$ through `surface_vertex.glsl`, which
 scales the unit disk by $r \cdot$ `grow` and applies $K$ per vertex — `hInv` of the
 equilibrium's [[ConjugacyMap]], exactly $K$ on $E$ — so the surface grows continuously:
-a `surface opacity` fill without depth writes plus the edge ring), trails and heads, `renderBranches` (the
-branch curve and a bead at its tip, `width` px), halos.
+a `surface opacity` fill that tests but never writes depth — at opacity 1 it is opaque and does write depth (`fillDepth`), so its folds hide properly — plus the edge ring; then a
+stored surface's bands, the same way), halos.
 
 **Clip planes** (`fitClipPlanes`, every frame): the far plane reaches past the whole
 scene — cube plus the freeze distance — from wherever the camera is, so zooming far out
@@ -129,6 +144,7 @@ near plane is left at the shared [[Camera]]'s default.
 - [[InvariantManifold]] — $K$ of each side at each equilibrium; `relDefectBelow` for the
   trusted radius; `orthoBasis`/`toParam`/`eval` for the patch and the branch seeds.
 - [[ConjugacyMap]] — $K_s + K_u$ on the GPU: the vertex stage of the 2-D local manifolds.
+- [[LevelSetSurface]] — the stored global surfaces (`data/*.lss`), grown band by band.
 - [[LorenzSystem]] — the field (ODE rhs, jet, glyph sampling), equilibria, Jacobians,
   the quadratic part for $K$.
 - [[Eigen3]] — type of each linearization (popup header).
@@ -167,16 +183,15 @@ Panel: **Lorenz system**, **Equilibria** (one row per bead: hover lights it, cli
 pins its popup, `[pinned]` tag; `Reset manifolds` once anything is grown), **Flow**,
 **Ball of trajectories**, **Single trajectories**, collapsed **Other settings**
 (camera; integrator — `ball`, `singles, manifolds`; **Manifolds**: `K order`,
-`growth time`, `width`, `surface opacity`, `branch time`, `backward speed cap`,
+`growth time`, `width`, `surface opacity`, `branch time`, `surface growth time`, `backward speed cap`,
 `pause beyond`; LaTeX sizes; bead size + `labels`, which
 also governs the $W$ labels; arrows; trails; performance), **Settings**, **Screenshot**.
 Explorer thumbnail: `docs/screenshots/lorenz_manifold_growth.png`.
 Uniforms as [[lorenz-flow]] (glyph pair + bead pair).
 
 ## Future
-- Surfaces: geodesic level sets for `Grow W^s(O)` / `Grow W^u(C_\pm)`; the walkthrough
-  grows in [[learn-geodesic-level-sets]]. The algorithm is to be re-read by the user
-  first, not generated.
+- Surfaces: only $W^s(O)$ at the classic parameters is stored; $W^u(C_\pm)$ (or other
+  parameters) need their own Grow rings + Save surface in [[learn-geodesic-level-sets]].
 - A third sim with beads would justify extracting the bead/picking/halo/popup code
   into a module ([[0010-manifold-popup-and-copied-baseline]]).
 - Branches ignore `reverse`; a retracting branch would need a trail that can shrink.

@@ -69,6 +69,7 @@ core is the skeleton sims don't choose). New modules via the `/new-module` skill
 - [[TaylorIntegrator]] — high-order Taylor series method, adaptive steps, dense output (singles)
 - [[Eigen3]] — 3×3 eigenvalues/vectors (complex pairs), hyperbolicity, $E^s$/$E^u$ bases
 - [[InvariantManifold]] — parametrization method: Taylor map $K$ of $W^s$/$W^u$ at any equilibrium
+- [[LevelSetSurface]] — a surface grown by geodesic level sets, band by band, saved / loaded (`.lss`)
 - [[LorenzSystem]] — the Lorenz field, its equilibria, Jacobian and quadratic part
 
 ### compute — CUDA interop (future, M4 in [[roadmap]])
@@ -82,8 +83,8 @@ core is the skeleton sims don't choose). New modules via the `/new-module` skill
 - [[diagonal-linear]] — $\dot x = \mathrm{diag}(\lambda)\,x$ in R3: stable/unstable subspaces + balls of trajectories
 - [[lorenz-flow]] — the global Lorenz flow: field, trajectories, equilibria to hover (linearization) and click (eased zoom → handoff)
 - [[lorenz-equilibrium]] — the flow inside a glass ball $V$ around one Lorenz equilibrium; where Hartman–Grobman stages A/B/C land
-- [[lorenz-manifold-growth]] — grow $W^s$/$W^u$ of each Lorenz equilibrium from a hover popup: the Taylor patch $W_{loc}$ first, then the flow carries a curve on (surfaces wait for geodesic level sets); watch a branch
-- [[learn-geodesic-level-sets]] — the walkthrough of geodesic level sets, entered from the growth popup: the 2-D local manifold alone and its mesh (yellow vertices); the algorithm steps come next
+- [[lorenz-manifold-growth]] — grow $W^s$/$W^u$ of each Lorenz equilibrium from a hover popup: the Taylor patch $W_{loc}$ first, then the flow carries a curve on, a stored surface grows band by band ($W^s(O)$, classic parameters); watch a branch
+- [[learn-geodesic-level-sets]] — the walkthrough of geodesic level sets, entered from the growth popup: the mesh, the BVP, rings grown and accepted (bands light / dark blue), Save surface
 
 ## Math
 Domain concepts as first-class notes (idea / equations / where implemented / pitfalls);
@@ -106,3 +107,4 @@ sims link to them instead of re-deriving. New concepts from `math/_template.md`.
 - [[0008-gpu-work-split-vertex-stage-and-cuda]]
 - [[0009-sim-handoff-requestswitch]]
 - [[0010-manifold-popup-and-copied-baseline]]
+- [[0011-precomputed-level-set-surfaces]]

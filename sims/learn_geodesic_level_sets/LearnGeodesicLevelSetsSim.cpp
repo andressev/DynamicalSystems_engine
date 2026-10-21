@@ -4,6 +4,7 @@
 #include <engine/Camera.h>
 #include <engine/InvariantManifold.h>
 #include <engine/LatexImage.h>
+#include <engine/LevelSetSurface.h>
 #include <engine/LorenzSystem.h>
 #include <engine/Mesh.h>
 #include <engine/Shader.h>
@@ -43,9 +44,14 @@ const glm::vec3 kHitColor(1.0f, 0.70f, 0.16f);        // b_r(tau): where a parti
 const glm::vec3 kNeighborColor(1.0f, 0.58f, 0.22f);   // r^+, r^-
 const glm::vec3 kNewColor(0.35f, 0.85f, 1.0f);        // r_new: the BVP solutions, their band
 const glm::vec3 kPlaneColor(0.72f, 0.74f, 0.78f);     // the half-plane F_r
+// accepted bands alternate light / dark, one band per geodesic level set
+const glm::vec3 kStableBand[2] = {{0.55f, 0.82f, 1.0f}, {0.10f, 0.28f, 0.80f}};
+const glm::vec3 kUnstableBand[2] = {{1.0f, 0.68f, 0.55f}, {0.72f, 0.24f, 0.16f}};
 
 const char* kSettingsPath = SIMS_DIR "learn_geodesic_level_sets/settings.txt";
 const char* kGrowthSim = "lorenz_manifold_growth";   // where the walkthrough is entered from
+// "Save surface": the accepted bands, for lorenz_manifold_growth to grow without solving
+const char* kSurfaceDir = SIMS_DIR "lorenz_manifold_growth/data/";
 
 // The trusted radius, exactly as lorenz_manifold_growth finds it, so the patch handed
 // over is the patch drawn here.
@@ -61,7 +67,8 @@ constexpr int kCapacity = kMaxSegs * 3 + (kMaxRings - 1) * kMaxSegs * 6 +
 constexpr float kFramingScale = 3.2f;   // camera distance / patch radius
 constexpr int kOverlayCapacity = 160;   // r, its neighbours, n (shaft + cone), F_r
 constexpr int kBandCapacity = 24 * kMaxEdge;   // the new band: fill, lines, points, orbit
-constexpr int kLayerCapacity = 1 << 20;         // accepted bands: fill, lines, edge loop + points
+constexpr int kLayerCapacity = 1 << 20;         // accepted bands: lines, edge loop + points
+constexpr int kBandsCapacity = 1 << 21;         // accepted bands' triangles (pos, from, band)
 constexpr float kPickPixels = 14.0f;    // a click this close to an edge vertex picks it
 constexpr int kEdgeSamples = 1024;      // the edge, sampled for dragging the ball along it
 constexpr int kMaxParticles = 700;      // launched from the ball; the oldest goes first
@@ -70,6 +77,7 @@ constexpr int kRingPoints = 5000;       // their trails: fewer points, there are
 constexpr float kRingSpacing = 2e-3f;   // ...spaced this far apart (x radius): trails ~10 radii long
 constexpr int kMaxShoot = 128;          // particles in one shot from r to the ball
 constexpr float kBallStep = 0.25f;      // radians: how far the ball may slide in one frame
+constexpr float kBallDragPixels = 4.0f; // a press on the ball that moves this far drags it, else it launches
 constexpr int kHitCapacity = 4 * kMaxParticles;   // per hit: the dot, the segment to r
 constexpr int kParticlePoints = 60000;  // trail of each
 constexpr float kMinParticleSpeed = 1e-6f;   // field time per second, arrow-key range
@@ -317,6 +325,9 @@ public:
         frontMesh = std::make_unique<engine::Mesh>(kMaxParticles + 64, std::vector<int>{3});
         bandMesh = std::make_unique<engine::Mesh>(kBandCapacity, std::vector<int>{3});
         layerMesh = std::make_unique<engine::Mesh>(kLayerCapacity, std::vector<int>{3});
+        bandsMesh = std::make_unique<engine::Mesh>(kBandsCapacity, std::vector<int>{3, 3, 1});
+        bandShader = engine::Shader(SIMS_DIR "learn_geodesic_level_sets/shaders/band_vertex.glsl",
+                                    SIMS_DIR "learn_geodesic_level_sets/shaders/band_fragment.glsl");
         jet = [this](const double* x, double, int order, double* c) { system.jet(x, order, c); };
 
         loadSettingsFile(cfg, kSettingsPath);
@@ -389,24 +400,40 @@ public:
         meshFade += std::clamp(target - meshFade, -step, step);
         rFade += std::clamp((edgeIndex >= 0 ? 1.0f : 0.0f) - rFade, -step, step);
 
-        // the ball on the edge: press and drag slides it along the edge, a double click
-        // launches a particle from it. It comes before r's picking: on the ball, a
-        // click is the ball's.
+        // the ball on the edge: press and drag slides it along the edge; a click (released
+        // before the mouse moved kBallDragPixels) launches a particle from it. It comes
+        // before r's picking: from a press on the ball until the release, the mouse is
+        // the ball's — the ball sliding away from the cursor never hands the click to an
+        // edge vertex.
         ballHover = !io.WantCaptureMouse && !edgeCurve.empty() && overBall();
-        if (ballHover && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-            launchParticle();
-        else if (ballHover && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        if (ballHover && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        {
+            ballPressed = true;
+            ballPress = glm::vec2(io.MousePos.x, io.MousePos.y);
+        }
+        if (ballPressed && !ballDragging &&
+            glm::length(glm::vec2(io.MousePos.x, io.MousePos.y) - ballPress) > kBallDragPixels)
             ballDragging = true;
-        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
-            ballDragging = false;
         if (ballDragging)
             ballAngle = slideBall(io.MousePos.x, io.MousePos.y);
-        // V with the cursor on the ball: shoot from r to it
-        if (ballHover && !io.WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_V, false))
-            shootFromR();
+        const bool ballOwnsMouse = ballPressed;
+        if (ballPressed && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+        {
+            if (!ballDragging)
+                launchParticle();
+            ballPressed = ballDragging = false;
+        }
+        // V: the edge from r to the ball flows (needs an r)
+        if (!io.WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_V, false))
+        {
+            if (edgeIndex >= 0)
+                shootFromR();
+            else
+                bvpStatus = "V: pick an edge point r first";
+        }
 
         // r: the edge vertex under the cursor lights; a click picks it and zooms in
-        hoverEdge = io.WantCaptureMouse || ballHover || ballDragging ? -1 : pickEdge();
+        hoverEdge = io.WantCaptureMouse || ballHover || ballOwnsMouse ? -1 : pickEdge();
         if (hoverEdge >= 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
             chooseEdge(hoverEdge);
         // a double click also solves the geodesic BVP there
@@ -524,7 +551,7 @@ public:
                 shader.setInt("u_round", 0);
             }
             if (layer > 0)
-                renderLayers(color, px);
+                renderLayers(color, view, projection, px);
             renderEdgePoint(px);
             renderBand(px);
             renderParticles(px);
@@ -606,10 +633,16 @@ public:
             bvpStatus.clear();
             paramsDirty = true;
         }
-        ImGui::SliderFloat("alpha_min", &cfg.alphaMin, 0.0f, 1.5f, "%.2f rad");
-        ImGui::SliderFloat("alpha_max", &cfg.alphaMax, 0.01f, 1.5f, "%.2f rad");
-        ImGui::SliderFloat("(Delta alpha)_min", &cfg.dAlphaMin, 0.0f, 2.0f, "%.3f");
-        ImGui::SliderFloat("(Delta alpha)_max", &cfg.dAlphaMax, 0.001f, 5.0f, "%.3f");
+        // shown in degrees, kept (and used) in radians
+        auto degSlider = [](const char* label, float& rad, float lo, float hi) {
+            float d = glm::degrees(rad);
+            if (ImGui::SliderFloat(label, &d, glm::degrees(lo), glm::degrees(hi), "%.1f deg"))
+                rad = glm::radians(d);
+        };
+        degSlider("alpha_min", cfg.alphaMin, 0.0f, 1.5f);
+        degSlider("alpha_max", cfg.alphaMax, 0.01f, 1.5f);
+        degSlider("(Delta alpha)_min", cfg.dAlphaMin, 0.0f, 2.0f);
+        degSlider("(Delta alpha)_max", cfg.dAlphaMax, 0.001f, 5.0f);
         cfg.alphaMin = std::min(cfg.alphaMin, cfg.alphaMax);
         cfg.dAlphaMin = std::min(cfg.dAlphaMin, cfg.dAlphaMax);
         ImGui::TextDisabled("Delta_i = %.4g   layer %d   eta = %.4g", stepDelta, layer, eta);
@@ -630,6 +663,16 @@ public:
         }
         if (growWarnings > 0)
             ImGui::TextDisabled("%d ring(s) accepted at Delta_min over the angle bounds", growWarnings);
+        if (layer > 0 && growLeft == 0)
+        {
+            if (ImGui::Button("Save surface"))
+                saveSurface();
+            if (!surfaceStatus.empty())
+            {
+                ImGui::SameLine();
+                ImGui::TextDisabled("%s", surfaceStatus.c_str());
+            }
+        }
 
         sectionHeader("Particles");
         if (ImGui::Button(playing ? "Pause" : "Play"))
@@ -1108,6 +1151,29 @@ private:
             }
             paramsLatex.set(t, cfg.paramsLatexSize);
         }
+        // the angle bounds of the Delta_i adaptation (3.2) on a second line, shown in
+        // degrees (Delta alpha as Delta times alpha in degrees; the method uses radians);
+        // re-typeset only when the text changes
+        {
+            auto deg = [](float rad) {
+                char b[32];
+                std::snprintf(b, sizeof(b), "%.1f", glm::degrees(rad));
+                std::string s = b;
+                if (s.size() > 2 && s.compare(s.size() - 2, 2, ".0") == 0)
+                    s.resize(s.size() - 2);
+                return s + R"(^{\circ})";
+            };
+            const std::string t = R"(\alpha_{\min} = )" + deg(cfg.alphaMin) +
+                                  R"(,\quad \alpha_{\max} = )" + deg(cfg.alphaMax) +
+                                  R"(,\quad (\Delta\alpha)_{\min} = )" + deg(cfg.dAlphaMin) +
+                                  R"(,\quad (\Delta\alpha)_{\max} = )" + deg(cfg.dAlphaMax);
+            if (t != angleShownText || angleShownSize != cfg.paramsLatexSize)
+            {
+                angleShownText = t;
+                angleShownSize = cfg.paramsLatexSize;
+                angleLatex.set(t, cfg.paramsLatexSize);
+            }
+        }
         if (paramsLatex.empty())
             return;
         const ImGuiViewport* vp = ImGui::GetMainViewport();
@@ -1120,6 +1186,14 @@ private:
                          ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings |
                          ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
         paramsLatex.draw();
+        if (!angleLatex.empty())
+        {
+            // right-aligned under the first line, like the window's anchor
+            const float shift = (float)paramsLatex.width() - (float)angleLatex.width();
+            if (shift > 0.0f)
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + shift);
+            angleLatex.draw();
+        }
         ImGui::End();
         ImGui::PopStyleVar();
     }
@@ -1798,7 +1872,7 @@ private:
         std::vector<float> v;
         auto put = [&](const glm::dvec3& p) { v.insert(v.end(), {(float)p.x, (float)p.y, (float)p.z}); };
         std::vector<glm::dvec3> lines;
-        bandGeometry(v, lines);
+        bandGeometry(v, lines, nullptr);
         const int fill = (int)(v.size() / 3);
         for (const Solution& q : solutions)   // each r -> r_new
             lines.insert(lines.end(), {q.A.r, q.point});
@@ -1843,11 +1917,17 @@ private:
 
     // The band's triangles (into tri, as floats) and lines (pairs): for neighbouring
     // solved edge points r, r^+ the triangles r -> r^+ -> r_new and r^+ -> r^+_new ->
-    // r_new, through the mid point when one was needed.
-    void bandGeometry(std::vector<float>& tri, std::vector<glm::dvec3>& lines) const
+    // r_new, through the mid point when one was needed. `from` (optional, same layout as
+    // tri): where each vertex grew from — r and r^+ from themselves, a new point from its
+    // start on the edge.
+    void bandGeometry(std::vector<float>& tri, std::vector<glm::dvec3>& lines, std::vector<float>* from) const
     {
         const int E = (int)edgeAngles.size();
-        auto put = [&](const glm::dvec3& p) { tri.insert(tri.end(), {(float)p.x, (float)p.y, (float)p.z}); };
+        auto put = [&](const glm::dvec3& p, const glm::dvec3& f) {
+            tri.insert(tri.end(), {(float)p.x, (float)p.y, (float)p.z});
+            if (from)
+                from->insert(from->end(), {(float)f.x, (float)f.y, (float)f.z});
+        };
         const std::vector<int> at = solutionIndex();
         for (const Solution& q : solutions)
         {
@@ -1856,18 +1936,32 @@ private:
                 continue;
             const Solution* next = &solutions[(size_t)at[(size_t)k]];
             const glm::dvec3 r = q.A.r, rp = next->A.r, rn = q.point, rpn = next->point;
+            const glm::dvec3 rnFrom = from ? edgePointD(q.start) : rn;
+            const glm::dvec3 rpnFrom = from ? edgePointD(next->start) : rpn;
             auto mid = mids.find(q.edge);
             if (mid == mids.end())
             {
-                for (const glm::dvec3& p : {r, rp, rn, rp, rpn, rn})
-                    put(p);
+                put(r, r);
+                put(rp, rp);
+                put(rn, rnFrom);
+                put(rp, rp);
+                put(rpn, rpnFrom);
+                put(rn, rnFrom);
                 lines.insert(lines.end(), {rn, rpn, rp, rn});
             }
             else
             {
                 const glm::dvec3 m = mid->second.point;
-                for (const glm::dvec3& p : {r, rp, m, r, m, rn, rp, rpn, m})
-                    put(p);
+                const glm::dvec3 mFrom = from ? edgePointD(mid->second.start) : m;
+                put(r, r);
+                put(rp, rp);
+                put(m, mFrom);
+                put(r, r);
+                put(m, mFrom);
+                put(rn, rnFrom);
+                put(rp, rp);
+                put(rpn, rpnFrom);
+                put(m, mFrom);
                 lines.insert(lines.end(), {rn, m, m, rpn, r, m, rp, m});
             }
         }
@@ -1887,7 +1981,7 @@ private:
     // minSpread to the one before goes, unless the gap left would pass maxSpread; a gap
     // still over maxSpread gets the midpoint of the ring's polyline); a parameter by arc
     // length scaled to 2 pi. The band between the old edge and the ring joins the
-    // accepted surface (layerTri / layerLines).
+    // accepted surface (accepted / layerLines).
     void acceptRing()
     {
         if (!ringComplete())
@@ -1956,16 +2050,18 @@ private:
         }
 
         // the band joins the accepted surface, the old edge's loop with its lines
-        std::vector<float> tri;
+        engine::LevelSetSurface::Band band;
         std::vector<glm::dvec3> lines;
-        bandGeometry(tri, lines);
-        if ((layerTri.size() + tri.size()) / 3 + layerLines.size() + lines.size() + 3 * pts.size() >
-            (size_t)kLayerCapacity)
+        bandGeometry(band.pos, lines, &band.from);
+        if (accepted.vertexCount() + band.pos.size() / 3 > (size_t)kBandsCapacity ||
+            layerLines.size() + lines.size() + pts.size() > (size_t)kLayerCapacity)
         {
             bvpStatus = "accepted surface is full";
             return;
         }
-        layerTri.insert(layerTri.end(), tri.begin(), tri.end());
+        band.eta = eta + usedDelta;
+        appendBand(band);
+        accepted.bands.push_back(std::move(band));
         layerLines.insert(layerLines.end(), lines.begin(), lines.end());
 
         // the ring as the new edge: parameter by arc length, scaled to 2 pi
@@ -2014,7 +2110,9 @@ private:
         growLeft = 0;
         linearInserts = 0;
         ringPrev.clear();
-        layerTri.clear();
+        accepted.bands.clear();
+        bandVerts = 0;
+        surfaceStatus.clear();
         layerLines.clear();
         ringPts.clear();
         ringOut.clear();
@@ -2022,12 +2120,50 @@ private:
         layerFill = layerLineCount = 0;
     }
 
-    // The layer mesh: accepted bands' triangles, their lines, then the current edge as a
-    // loop (its points double as the vertex dots).
+    // A newly accepted band onto the end of the bands mesh: per vertex its position,
+    // where it grew from and its band index (the color it alternates by).
+    void appendBand(const engine::LevelSetSurface::Band& b)
+    {
+        const int n = (int)(b.pos.size() / 3);
+        const float k = (float)accepted.bands.size();
+        std::vector<float> v;
+        v.reserve((size_t)n * 7);
+        for (int i = 0; i < n; ++i)
+            v.insert(v.end(), {b.pos[3 * i], b.pos[3 * i + 1], b.pos[3 * i + 2],
+                               b.from[3 * i], b.from[3 * i + 1], b.from[3 * i + 2], k});
+        bandsMesh->setVertices(v.data(), v.size(), (size_t)bandVerts * 7);
+        bandVerts += n;
+    }
+
+    // "Save surface": the accepted bands with what they were grown for, as
+    // lorenz_manifold_growth/data/surface_<eq>_<s|u>.lss — what that sim grows when its
+    // parameters and K order are these.
+    void saveSurface()
+    {
+        engine::LevelSetSurface out = accepted;
+        out.tags = {{"sigma", cfg.sigma}, {"rho", cfg.rho}, {"beta", cfg.beta},
+                    {"eq", (double)cfg.eq}, {"side", (double)side},
+                    {"order", (double)cfg.manifoldOrder}, {"radius", radius}};
+        static const char* kNames[] = {"O", "Cp", "Cm"};
+        const std::string path = std::string(kSurfaceDir) + "surface_" + kNames[cfg.eq] + "_" +
+                                 (side == 0 ? "s" : "u") + ".lss";
+        std::error_code ec;
+        std::filesystem::create_directories(kSurfaceDir, ec);
+        char b[200];
+        if (out.save(path))
+            std::snprintf(b, sizeof(b), "saved %s (%d bands, eta = %.4g)",
+                          std::filesystem::path(path).filename().string().c_str(), (int)out.bands.size(), eta);
+        else
+            std::snprintf(b, sizeof(b), "could not write %s", path.c_str());
+        surfaceStatus = b;
+    }
+
+    // The layer mesh: accepted bands' lines, then the current edge as a loop (its points
+    // double as the vertex dots).
     void uploadLayers()
     {
-        std::vector<float> v = layerTri;
-        layerFill = (int)(v.size() / 3);
+        std::vector<float> v;
+        layerFill = 0;
         for (const glm::dvec3& p : layerLines)
             v.insert(v.end(), {(float)p.x, (float)p.y, (float)p.z});
         layerLineCount = (int)layerLines.size();
@@ -2036,13 +2172,20 @@ private:
         layerMesh->setVertices(v.data(), std::min(v.size(), (size_t)kLayerCapacity * 3));
     }
 
-    // The accepted surface as the patch is drawn: fill, lines (with the mesh), the edge
-    // loop, its vertices (with the mesh).
-    void renderLayers(const glm::vec3& color, float px)
+    // The accepted surface as the patch is drawn: the bands, light / dark by turns, lines
+    // (with the mesh), the edge loop, its vertices (with the mesh).
+    void renderLayers(const glm::vec3& color, const glm::mat4& view, const glm::mat4& projection, float px)
     {
-        shader.setVec3("u_color", color);
-        shader.setFloat("u_alpha", cfg.fillAlpha);
-        layerMesh->drawArrays(GL_TRIANGLES, layerFill, 0);
+        const glm::vec3* tones = side == 0 ? kStableBand : kUnstableBand;
+        bandShader.use();
+        bandShader.setMat4("view", view);
+        bandShader.setMat4("projection", projection);
+        bandShader.setFloat("u_grow", 1e9f);
+        bandShader.setVec3("u_colorEven", tones[0]);
+        bandShader.setVec3("u_colorOdd", tones[1]);
+        bandShader.setFloat("u_alpha", cfg.fillAlpha);
+        bandsMesh->drawArrays(GL_TRIANGLES, bandVerts, 0);
+        shader.use();
         if (meshFade > 0.0f)
         {
             shader.setVec3("u_color", kEdgeColor);
@@ -2833,7 +2976,11 @@ private:
     // (past layer 0) as points with their parameter and the direction each grew in
     std::unique_ptr<engine::Mesh> layerMesh;
     int layer = 0;
-    std::vector<float> layerTri;
+    engine::LevelSetSurface accepted;   // the bands' triangles, band by band
+    std::unique_ptr<engine::Mesh> bandsMesh;
+    engine::Shader bandShader;
+    int bandVerts = 0;
+    std::string surfaceStatus;
     std::vector<glm::dvec3> layerLines;
     int layerFill = 0, layerLineCount = 0;
     std::vector<glm::dvec3> ringPts, ringOut;
@@ -2895,6 +3042,9 @@ private:
     bool paramsDirty = true;
     float paramsShownSize = 0.0f, paramsShownMax = 0.0f, paramsShownMin = 0.0f;
     float paramsShownDMin = 0.0f, paramsShownDMax = 0.0f;
+    engine::LatexImage angleLatex;      // the second line: the angle bounds
+    std::string angleShownText;
+    float angleShownSize = 0.0f;
 
     // the orbit frame (local y = screen-up) and its ease
     glm::quat viewFrame{1.0f, 0.0f, 0.0f, 0.0f};
@@ -2908,6 +3058,8 @@ private:
     float ballAngle = 0.0f;             // where on the edge, radians in E
     bool ballHover = false;
     bool ballDragging = false;
+    bool ballPressed = false;           // pressed on the ball, not released yet
+    glm::vec2 ballPress{0.0f};          // where (screen px)
     std::vector<std::unique_ptr<Particle>> particles;
     std::unique_ptr<engine::Mesh> hitMesh;
     int hitEdge = -1;                 // the r (and mesh) the hits were found with

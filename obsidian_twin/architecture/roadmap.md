@@ -5,12 +5,15 @@
      this is the first thing read at session start ([[Home]] routing). -->
 - **Manifold growth (started 2026-10-18)** — [[lorenz-manifold-growth]]: hover a bead →
   popup → grow $W_{loc}$, then grow $W$: **done for curves** ($W^u(O)$, $W^s(C_\pm)$);
-  **surfaces wait for geodesic level sets** (their `Grow W` stays disabled).
+  **surfaces from stored level sets** ([[0011-precomputed-level-set-surfaces]]): $W^s(O)$
+  at the classic parameters grows band by band to $\eta = 97$; $W^u(C_\pm)$ not stored yet.
 - **Geodesic level sets (started 2026-10-18)** — built step by step, *as the user
   specifies the method*, in the walkthrough sim [[learn-geodesic-level-sets]] (entered
   from the growth popup). Done: the BVP as in the paper (continuation in $\tau$,
   [[geodesic-bvp]]), Solve all r, Accept ring (ring → new edge): three rings grown by
-  hand. **Next: as the user specifies** ($\Delta_i$ adaptation, §3.2) — section below.
+  hand. Since then: Grow rings with the §3.2 $\Delta_i$ adaptation, bands light / dark
+  blue, **Save surface** → $W^s(O)$ stored (98 rings, $\eta = 97$, stops at a fold).
+  **Next: as the user specifies** — section below.
 - **Hartman–Grobman track (started 2026-10-16)** — see the section below. M0 done
   ([[ArrowGlyphs]]), M1 done ([[Eigen3]] + [[InvariantManifold]], checked by the new
   `tests/math_tests` exe), plus a GPU pass ([[0008-gpu-work-split-vertex-stage-and-cuda]]):
@@ -136,6 +139,26 @@ Orbits leaving $U$/$V$ dissolve on the rim, both at the same instant.
 ## M4 — CUDA interop
 `cudaGraphicsGLRegisterBuffer` on [[Mesh]]'s VBO (exposed via `Mesh::vbo()`) for
 GPU-side particle advection of flows. This is why all vertex buffers live in one class.
+
+## Later — manifold morph (parked 2026-10-20)
+Blend stored surfaces ([[LevelSetSurface]]) of different parameters in
+[[lorenz-manifold-growth]]. Correspondence from the method itself: label every point by
+$(\eta, \theta_0)$ — $\theta_0$ its angle on the $W_{loc}$ circle, inherited by $r_{new}$
+from its BVP start, averaged for points inserted at accept — store a resampled
+$(\eta, \theta_0)$ grid, save snapshots (e.g. $\rho = 24, 26, 28$), and a $\rho$ slider
+mixes the two nearest per vertex on the GPU. A picture, not the true manifold between
+snapshots: fine when they are close, misleading across bifurcations (homoclinic
+explosion at $\rho \approx 13.93$); $\theta_0$ holds only while rings don't fold.
+
+## Later — $W^u(C_\pm)$ by level sets (parked 2026-10-20)
+Tried in [[learn-geodesic-level-sets]]: at $\rho = 28$ four rings ($\eta = 4$), then "r_new
+grows backward" ($\alpha_r = \pi$); at $\rho = 60$ it fails on ring 1. Cause: the first
+edge is a round circle in $E^u$, but the complex pair ($0.094 \pm 10.2i$) rotates along
+tilted ellipses, so the linear flow points inward on ~49% of it (41% at $\rho = 60$).
+Proposed fix: for a complex pair start from $|s| = c$ in $K$'s parameter coordinates
+(flow $s \mapsto e^{\lambda t}s$, uniform expansion) — an ellipse in $E^u$; $W^s(O)$
+unchanged. Check against Krauskopf & Osinga first. $W^u(C_-)$ is then the mirror of
+$W^u(C_+)$ under $(x,y,z) \mapsto (-x,-y,z)$.
 
 ## Later — big balls (parked 2026-10-16)
 200 particles looks right for now; the ball slider caps at 1000. To go to ~10k:

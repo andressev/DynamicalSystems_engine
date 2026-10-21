@@ -10,6 +10,7 @@
 #include <engine/Integrator.h>
 #include <engine/InvariantManifold.h>
 #include <engine/LatexImage.h>
+#include <engine/LevelSetSurface.h>
 #include <engine/LorenzSystem.h>
 #include <engine/Mesh.h>
 #include <engine/Shader.h>
@@ -51,6 +52,14 @@ const glm::vec3 kHaloColor = {1.0f, 0.38f, 0.22f};
 const glm::vec3 kStableColor(0.45f, 0.72f, 1.0f);     // W^s
 const glm::vec3 kUnstableColor(1.0f, 0.55f, 0.45f);   // W^u
 const glm::vec3 kPopupTitleColor(1.0f, 0.45f, 0.40f);
+// a grown surface's bands alternate light / dark, one per geodesic level set (as in
+// learn_geodesic_level_sets)
+const glm::vec3 kStableBand[2] = {{0.55f, 0.82f, 1.0f}, {0.10f, 0.28f, 0.80f}};
+const glm::vec3 kUnstableBand[2] = {{1.0f, 0.68f, 0.55f}, {0.72f, 0.24f, 0.16f}};
+
+// Surfaces grown ahead of time by geodesic level sets (learn_geodesic_level_sets' "Save
+// surface"): data/surface_<O|Cp|Cm>_<s|u>.lss, grown here when the parameters match.
+const char* kSurfaceDir = SIMS_DIR "lorenz_manifold_growth/data/";
 
 const char* kSettingsPath = SIMS_DIR "lorenz_manifold_growth/settings.txt";
 
@@ -201,6 +210,7 @@ struct Settings {
     float manifoldWidth = 3.0f;   // px, curves (local and global)
     float diskAlpha = 0.3f;       // a 2-D local manifold's fill
     float branchTime = 21.0f;     // a global branch flows this much field time, then stops
+    float surfaceGrowSeconds = 20.0f;   // a stored surface grows out to its last level set over this
     float backSpeed = 15.0f;      // backward curves: arc speed cap, world units per field time
     float pauseBeyond = 12.5f;    // backward curves freeze this many domain radii out
 
@@ -263,6 +273,7 @@ std::vector<Setting> settingsTable(Settings& s)
         {"manifoldWidth", &s.manifoldWidth},
         {"diskAlpha", &s.diskAlpha},
         {"branchTime", &s.branchTime}, {"backSpeed", &s.backSpeed},
+        {"surfaceGrowSeconds", &s.surfaceGrowSeconds},
         {"pauseBeyond", &s.pauseBeyond},
         {"cameraTheta", &s.camTheta}, {"cameraPhi", &s.camPhi},
         {"cameraRadius", &s.camRadius},
@@ -331,6 +342,7 @@ void loadSettingsFile(Settings& s, const char* path)
     s.manifoldWidth = std::clamp(s.manifoldWidth, 1.0f, 8.0f);
     s.diskAlpha = std::clamp(s.diskAlpha, 0.02f, 1.0f);
     s.branchTime = std::clamp(s.branchTime, 0.1f, 1000.0f);
+    s.surfaceGrowSeconds = std::clamp(s.surfaceGrowSeconds, 1.0f, 300.0f);
     s.backSpeed = std::clamp(s.backSpeed, 0.1f, 1000.0f);
     s.pauseBeyond = std::clamp(s.pauseBeyond, 0.5f, 50.0f);
 }
@@ -362,6 +374,9 @@ public:
                            "@CONJUGACY_MAP", engine::ConjugacyMap::glsl()),
             loadWithInsert(SIMS_DIR "lorenz_manifold_growth/shaders/fragment.glsl", "@none", ""));
         surfaceShader.bindUniformBlock(engine::ConjugacyMap::kBlockName, engine::ConjugacyMap::kBinding);
+        bandShader = engine::Shader(SIMS_DIR "lorenz_manifold_growth/shaders/band_vertex.glsl",
+                                    SIMS_DIR "lorenz_manifold_growth/shaders/band_fragment.glsl");
+        loadStoredSurfaces();
         axisMesh = std::make_unique<engine::Mesh>(engine::Shapes::axisVertices(1000.0f),
                                                   engine::Shapes::axisIndices(),
                                                   std::vector<int>{3});
@@ -510,6 +525,10 @@ public:
                 Side& S = eqs[i].side[side];
                 if (eqs[i].ready && S.local && S.grow < 1.0f)
                     S.grow = std::min(1.0f, S.grow + dt / std::max(cfg.locGrowSeconds, 0.05f));
+                // a stored surface: its level sets come out at a steady geodesic speed
+                const StoredSurface* st = S.dim == 2 && S.global ? storedFor(i, side) : nullptr;
+                if (st && !S.paused)
+                    S.shownEta = std::min(st->eta.back(), S.shownEta + dt * st->eta.back() / cfg.surfaceGrowSeconds);
             }
 
         pollManifolds();
@@ -608,28 +627,10 @@ public:
             shader.setFloat("u_alpha", 1.0f);
         }
 
-        if (arrowsFade * sceneFade > 0.0f && !glyphs.empty())
-        {
-            // glyphs blend but never write depth, so they cannot hide a trajectory
-            glDepthMask(GL_FALSE);
-            shader.setInt("u_useRamp", 1);
-            shader.setInt("u_useFade", 1);
-            shader.setFloat("u_alpha", cfg.arrowAlpha * arrowsFade * sceneFade);
-            shader.setFloat("u_alphaTail", cfg.arrowTailAlpha);
-            glLineWidth(1.5f * px);
-            glyphs.drawShafts(shader);
-            shader.setInt("u_useFade", 0);
-            shader.setInt("u_shadeMode", 1);
-            glyphs.drawHeads(shader);
-            shader.setInt("u_shadeMode", 0);
-            shader.setInt("u_useRamp", 0);
-            shader.setFloat("u_alpha", 1.0f);
-            shader.setFloat("u_alphaTail", 1.0f);
-            glDepthMask(GL_TRUE);
-        }
-
-        renderLocalManifolds(view, projection, px);
-        shader.use();
+        // everything that writes depth first (curves, trails, heads, branches); then
+        // what only blends — glyphs, then the translucent manifold sheets — so each is
+        // hidden or tinted by what really is in front of it
+        renderLocalCurves(px);
 
         runner.beginDraw();
         for (const Curve& c : curves)
@@ -655,6 +656,29 @@ public:
         shader.setFloat("u_alpha", 1.0f);
         runner.endDraw();
         glLineWidth(1.0f);
+
+        if (arrowsFade * sceneFade > 0.0f && !glyphs.empty())
+        {
+            // glyphs blend but never write depth, so they cannot hide a trajectory
+            glDepthMask(GL_FALSE);
+            shader.setInt("u_useRamp", 1);
+            shader.setInt("u_useFade", 1);
+            shader.setFloat("u_alpha", cfg.arrowAlpha * arrowsFade * sceneFade);
+            shader.setFloat("u_alphaTail", cfg.arrowTailAlpha);
+            glLineWidth(1.5f * px);
+            glyphs.drawShafts(shader);
+            shader.setInt("u_useFade", 0);
+            shader.setInt("u_shadeMode", 1);
+            glyphs.drawHeads(shader);
+            shader.setInt("u_shadeMode", 0);
+            shader.setInt("u_useRamp", 0);
+            shader.setFloat("u_alpha", 1.0f);
+            shader.setFloat("u_alphaTail", 1.0f);
+            glDepthMask(GL_TRUE);
+            glLineWidth(1.0f);
+        }
+
+        renderSurfaces(view, projection, px);
 
         // halos last: additive light that brightens whatever is around the bead
         renderEquilibria(camera, view, projection, true);
@@ -780,7 +804,8 @@ private:
         double radius = 0.0;              // |theta| up to which K is trusted (defect check)
         bool local = false;               // "grow W_loc" pressed
         float grow = 0.0f;                // W_loc growing out of x*, 0 -> 1
-        bool global = false;              // "grow W" pressed (curves only)
+        bool global = false;              // "grow W" pressed (a curve, or a stored surface)
+        double shownEta = 0.0;            // a surface: geodesic distance grown past W_loc
         Branch branch[2];                 // the + and - ends
         int branchChoice = 0;             // which end "watch" follows
         double t0 = 0.0;                  // field time the branches started at
@@ -790,6 +815,15 @@ private:
         int fillCount = 0;                // vertices of the disk's triangles
         glm::vec3 labelAnchor{NAN};       // world point the W label hangs at
         glm::vec3 end[2]{};               // world ends of a 1-D W_loc, + then -
+    };
+
+    // A surface grown ahead of time (kSurfaceDir): the file, its mesh, and per band the
+    // geodesic distance it reaches and the vertex count up to its end.
+    struct StoredSurface {
+        engine::LevelSetSurface surface;
+        std::unique_ptr<engine::Mesh> mesh;
+        std::vector<double> eta;
+        std::vector<int> bandEnd;
     };
 
     // A worker's output for one equilibrium (computeManifolds): K on each side and the
@@ -905,6 +939,8 @@ private:
         ImGui::SliderFloat("width", &cfg.manifoldWidth, 1.0f, 8.0f, "%.1f px");
         ImGui::SliderFloat("surface opacity", &cfg.diskAlpha, 0.02f, 1.0f, "%.2f");
         ImGui::SliderFloat("branch time", &cfg.branchTime, 0.5f, 100.0f, "%.1f",
+                           ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("surface growth time", &cfg.surfaceGrowSeconds, 1.0f, 120.0f, "%.0f s",
                            ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("backward speed cap", &cfg.backSpeed, 1.0f, 200.0f, "%.0f",
                            ImGuiSliderFlags_Logarithmic);
@@ -1354,13 +1390,38 @@ private:
                 }
                 else
                 {
-                    // surfaces: the global growth needs geodesic level sets (not yet)
-                    ImGui::BeginDisabled();
-                    latexButton("##grow", "\\mathrm{Grow}\\;" + manifoldTex(e, side, false),
-                                ("Grow " + manifoldAscii(e, side, false)).c_str());
-                    ImGui::EndDisabled();
-                    ImGui::SameLine();
-                    ImGui::TextDisabled("not yet");
+                    // surfaces: grown ahead of time by geodesic level sets, for the
+                    // parameters they were stored with
+                    const StoredSurface* st = storedFor(eqIndex, side);
+                    if (!S.global)
+                    {
+                        ImGui::BeginDisabled(!st);
+                        if (latexButton("##grow", "\\mathrm{Grow}\\;" + manifoldTex(e, side, false),
+                                        ("Grow " + manifoldAscii(e, side, false)).c_str()))
+                        {
+                            S.global = true;
+                            S.paused = false;
+                            S.shownEta = 0.0;
+                        }
+                        ImGui::EndDisabled();
+                        if (!st)
+                        {
+                            ImGui::SameLine();
+                            ImGui::TextDisabled(hasStored(eqIndex, side) ? "classic parameters only" : "not yet");
+                        }
+                    }
+                    else if (st)
+                    {
+                        if (S.shownEta >= st->eta.back())
+                        {
+                            if (ImGui::Button("Regrow"))
+                                S.shownEta = 0.0;
+                        }
+                        else if (ImGui::Button(S.paused ? "Resume" : "Pause"))
+                            S.paused = !S.paused;
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("eta = %.1f", S.shownEta);
+                    }
                     ImGui::BeginDisabled(!app->hasSim(kLevelSetsSim));
                     if (ImGui::Button("Learn geodesic level sets"))
                         enterLevelSets(eqIndex, side);
@@ -1672,9 +1733,8 @@ private:
         run(full, h);
     }
 
-    // W_loc of every grown side, as far as it has grown: curves as lines, surfaces as a
-    // translucent fill (no depth writes) with the current edge ring on top.
-    void renderLocalManifolds(const glm::mat4& view, const glm::mat4& projection, float px)
+    // The 1-D W_loc of every grown side, as far as it has grown, as lines.
+    void renderLocalCurves(float px)
     {
         shader.setInt("u_useRamp", 0);
         shader.setInt("u_useFade", 0);
@@ -1699,8 +1759,17 @@ private:
                 }
             }
         shader.setFloat("u_alpha", 1.0f);
+    }
 
-        // surfaces: the whole disk at the grown radius, so it grows continuously
+    // The 2-D manifolds: W_loc (the whole disk at the grown radius, so it grows
+    // continuously) with its edge ring, then a stored surface's bands. Translucent fills
+    // that test depth but never write it — so render draws them after everything that
+    // does: what is behind a sheet shows through it, tinted, and what is in front stays
+    // in front. At full `surface opacity` a sheet is opaque and writes depth, so its own
+    // folds and everything behind it hide properly.
+    void renderSurfaces(const glm::mat4& view, const glm::mat4& projection, float px)
+    {
+        auto fillDepth = [](float alpha) { glDepthMask(alpha >= 0.999f ? GL_TRUE : GL_FALSE); };
         surfaceShader.use();
         surfaceShader.setMat4("view", view);
         surfaceShader.setMat4("projection", projection);
@@ -1719,7 +1788,7 @@ private:
                 surfaceShader.setVec3("u_color", side == kStable ? kStableColor : kUnstableColor);
                 surfaceShader.setVec3("u_center", e.pos);
                 surfaceShader.setFloat("u_radius", (float)S.radius * S.grow);
-                glDepthMask(GL_FALSE);
+                fillDepth(cfg.diskAlpha * fade);
                 surfaceShader.setFloat("u_alpha", cfg.diskAlpha * fade);
                 S.mesh->drawArrays(GL_TRIANGLES, S.fillCount, 0);
                 glDepthMask(GL_TRUE);
@@ -1728,6 +1797,84 @@ private:
                 S.mesh->drawArrays(GL_LINE_LOOP, kSegs, S.fillCount + kRings * kSegs);   // the edge
             }
         glLineWidth(1.0f);
+
+        // stored surfaces past W_loc: every band out to shownEta, the last one partly
+        // (band_vertex.glsl slides its outer points out from where they grew)
+        bandShader.use();
+        bandShader.setMat4("view", view);
+        bandShader.setMat4("projection", projection);
+        for (int i = 0; i < eqCount; ++i)
+            for (int side = 0; side < 2; ++side)
+            {
+                const Side& S = eqs[i].side[side];
+                const StoredSurface* st = eqs[i].ready && S.local && S.global && S.dim == 2 ? storedFor(i, side) : nullptr;
+                if (!st || S.shownEta <= 0.0)
+                    continue;
+                const int k = (int)(std::lower_bound(st->eta.begin(), st->eta.end(), S.shownEta) - st->eta.begin());
+                const int band = std::min(k, (int)st->eta.size() - 1);
+                const double e0 = band > 0 ? st->eta[(size_t)band - 1] : 0.0, e1 = st->eta[(size_t)band];
+                const float grow = (float)band + (float)std::clamp((S.shownEta - e0) / std::max(e1 - e0, 1e-12), 0.0, 1.0);
+                const glm::vec3* tones = side == kStable ? kStableBand : kUnstableBand;
+                const float fade = i == focusEq && side == focusSide ? 1.0f : sceneFade;
+                bandShader.setFloat("u_grow", grow);
+                bandShader.setVec3("u_colorEven", tones[0]);
+                bandShader.setVec3("u_colorOdd", tones[1]);
+                bandShader.setFloat("u_alpha", cfg.diskAlpha * fade);
+                fillDepth(cfg.diskAlpha * fade);
+                st->mesh->drawArrays(GL_TRIANGLES, st->bandEnd[(size_t)band], 0);
+                glDepthMask(GL_TRUE);
+            }
+    }
+
+    // ---- stored surfaces (geodesic level sets, grown ahead of time) ------------------
+
+    // Every data/surface_*.lss there is, each into its own mesh: position, where the
+    // vertex grew from, its band.
+    void loadStoredSurfaces()
+    {
+        static const char* kNames[] = {"O", "Cp", "Cm"};
+        for (int i = 0; i < 3; ++i)
+            for (int side = 0; side < 2; ++side)
+            {
+                StoredSurface& st = stored[i][side];
+                const std::string path = std::string(kSurfaceDir) + "surface_" + kNames[i] + "_" +
+                                         (side == kStable ? "s" : "u") + ".lss";
+                if (!st.surface.load(path) || st.surface.empty())
+                    continue;
+                std::vector<float> v;
+                v.reserve(st.surface.vertexCount() * 7);
+                for (size_t k = 0; k < st.surface.bands.size(); ++k)
+                {
+                    const engine::LevelSetSurface::Band& b = st.surface.bands[k];
+                    for (size_t j = 0; j + 2 < b.pos.size(); j += 3)
+                        v.insert(v.end(), {b.pos[j], b.pos[j + 1], b.pos[j + 2],
+                                           b.from[j], b.from[j + 1], b.from[j + 2], (float)k});
+                    st.eta.push_back(b.eta);
+                    st.bandEnd.push_back((int)(v.size() / 7));
+                }
+                st.mesh = std::make_unique<engine::Mesh>((int)(v.size() / 7), std::vector<int>{3, 3, 1});
+                st.mesh->setVertices(v.data(), v.size());
+            }
+    }
+
+    bool hasStored(int eqIndex, int side) const
+    {
+        return eqIndex >= 0 && eqIndex < 3 && stored[eqIndex][side].mesh != nullptr;
+    }
+
+    // The stored surface of this side, if it was grown for the field and K order in use
+    // (else its first band would not meet the W_loc drawn here).
+    const StoredSurface* storedFor(int eqIndex, int side) const
+    {
+        if (!hasStored(eqIndex, side))
+            return nullptr;
+        const StoredSurface& st = stored[eqIndex][side];
+        const engine::LevelSetSurface& s = st.surface;
+        auto near = [](double a, double b) { return std::abs(a - b) <= 1e-4 * std::max(1.0, std::abs(b)); };
+        const bool match = near(s.tag("sigma"), cfg.sigma) && near(s.tag("rho"), cfg.rho) &&
+                           near(s.tag("beta"), cfg.beta) && (int)s.tag("order") == cfg.manifoldOrder &&
+                           (int)s.tag("eq", -1) == eqIndex && (int)s.tag("side", -1) == side;
+        return match ? &st : nullptr;
     }
 
     // The global branches: the curve each end has traced, and a bead at its tip.
@@ -2451,6 +2598,7 @@ private:
     engine::Shader shader;      // glyphs, trails, axes, manifolds (vector_field's pair)
     engine::Shader eqShader;    // equilibrium beads + halos
     engine::Shader surfaceShader;   // 2-D local manifolds: K in the vertex stage
+    engine::Shader bandShader;      // stored surfaces: bands grown partly, light / dark
     std::unique_ptr<engine::Mesh> axisMesh;
     std::unique_ptr<engine::Mesh> sphereMesh;
     engine::ArrowGlyphs glyphs;
@@ -2473,6 +2621,7 @@ private:
 
     std::array<EqView, 3> eqs;
     int eqCount = 0;
+    StoredSurface stored[3][2];    // [equilibrium][side], loaded at init
     int manifoldGen = 0;           // bumped by every new field / K order (stale workers drop)
     bool paramsDragging = false;   // a sigma/rho/beta slider is held (no workers yet)
     int hovered = -1;           // bead under the cursor (or its UI row), this frame
