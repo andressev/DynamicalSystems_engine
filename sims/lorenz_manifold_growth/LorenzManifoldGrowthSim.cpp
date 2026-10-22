@@ -379,7 +379,7 @@ public:
         surfaceShader.bindUniformBlock(engine::ConjugacyMap::kBlockName, engine::ConjugacyMap::kBinding);
         bandShader = engine::Shader(SIMS_DIR "lorenz_manifold_growth/shaders/band_vertex.glsl",
                                     SIMS_DIR "lorenz_manifold_growth/shaders/band_fragment.glsl");
-        loadStoredSurfaces();
+        listStoredSurfaces();
         axisMesh = std::make_unique<engine::Mesh>(engine::Shapes::axisVertices(1000.0f),
                                                   engine::Shapes::axisIndices(),
                                                   std::vector<int>{3});
@@ -854,7 +854,12 @@ private:
 
     // A surface grown ahead of time (kSurfaceDir): the file, its mesh, and per band the
     // geodesic distance it reaches and the vertex count up to its end.
+    struct StoredFile {
+        std::string path;
+        double rho = 0.0;              // from the name, ..._rho<rho>.lss
+    };
     struct StoredSurface {
+        std::string path;              // the file it was read from
         engine::LevelSetSurface surface;
         std::unique_ptr<engine::Mesh> mesh;
         std::vector<double> eta;
@@ -913,6 +918,9 @@ private:
         paramsDragging |= ImGui::IsItemActive();
         changed |= ImGui::DragFloat("rho", &cfg.rho, 0.05f, 0.0f, 300.0f, "%.3f");
         paramsDragging |= ImGui::IsItemActive();
+        // let go among the stored surfaces' rho: it lands on the nearest one
+        if (ImGui::IsItemDeactivatedAfterEdit())
+            snapRhoToStored();
         changed |= ImGui::DragFloat("beta", &cfg.beta, 0.01f, 0.01f, 50.0f, "%.4f");
         paramsDragging |= ImGui::IsItemActive();
         if (ImGui::Button("Classic (10, 28, 8/3)"))
@@ -1449,7 +1457,7 @@ private:
                         if (!st)
                         {
                             ImGui::SameLine();
-                            ImGui::TextDisabled(hasStored(eqIndex, side) ? "classic parameters only" : "not yet");
+                            ImGui::TextDisabled(hasStored(eqIndex, side) ? "not stored at this rho" : "not yet");
                         }
                     }
                     else if (st)
@@ -1871,53 +1879,110 @@ private:
 
     // ---- stored surfaces (geodesic level sets, grown ahead of time) ------------------
 
-    // Every data/surface_*.lss there is, each into its own mesh: position, where the
-    // vertex grew from, its band.
-    void loadStoredSurfaces()
+    // Every data/surface_<eq>_<s|u>_rho<rho>.lss there is, listed by rho. A surface is read
+    // (loadStored) the first time the field sits at its rho; one per side in memory.
+    void listStoredSurfaces()
     {
         static const char* kNames[] = {"O", "Cp", "Cm"};
-        for (int i = 0; i < 3; ++i)
-            for (int side = 0; side < 2; ++side)
-            {
-                StoredSurface& st = stored[i][side];
-                const std::string path = std::string(kSurfaceDir) + "surface_" + kNames[i] + "_" +
-                                         (side == kStable ? "s" : "u") + ".lss";
-                if (!st.surface.load(path) || st.surface.empty())
-                    continue;
-                std::vector<float> v;
-                v.reserve(st.surface.vertexCount() * 7);
-                for (size_t k = 0; k < st.surface.bands.size(); ++k)
+        std::error_code ec;
+        for (const auto& entry : std::filesystem::directory_iterator(kSurfaceDir, ec))
+        {
+            if (entry.path().extension() != ".lss")
+                continue;
+            const std::string name = entry.path().filename().string();
+            for (int i = 0; i < 3; ++i)
+                for (int side = 0; side < 2; ++side)
                 {
-                    const engine::LevelSetSurface::Band& b = st.surface.bands[k];
-                    for (size_t j = 0; j + 2 < b.pos.size(); j += 3)
-                        v.insert(v.end(), {b.pos[j], b.pos[j + 1], b.pos[j + 2],
-                                           b.from[j], b.from[j + 1], b.from[j + 2], (float)k});
-                    st.eta.push_back(b.eta);
-                    st.bandEnd.push_back((int)(v.size() / 7));
+                    const std::string prefix = std::string("surface_") + kNames[i] + "_" +
+                                               (side == kStable ? "s" : "u") + "_rho";
+                    if (name.rfind(prefix, 0) == 0)
+                        storedFiles[i][side].push_back({entry.path().string(), std::atof(name.c_str() + prefix.size())});
                 }
-                st.mesh = std::make_unique<engine::Mesh>((int)(v.size() / 7), std::vector<int>{3, 3, 1});
-                st.mesh->setVertices(v.data(), v.size());
-            }
+        }
+        for (auto& row : storedFiles)
+            for (std::vector<StoredFile>& list : row)
+                std::sort(list.begin(), list.end(),
+                          [](const StoredFile& a, const StoredFile& b) { return a.rho < b.rho; });
+    }
+
+    // A stored surface into stored[eq][side] with its mesh: position, where the vertex
+    // grew from, its band. False if it cannot be read.
+    bool loadStored(int eqIndex, int side, const StoredFile& file)
+    {
+        StoredSurface& st = stored[eqIndex][side];
+        if (st.path == file.path)
+            return st.mesh != nullptr;
+        st = StoredSurface{};
+        st.path = file.path;
+        if (!st.surface.load(file.path) || st.surface.empty())
+            return false;
+        std::vector<float> v;
+        v.reserve(st.surface.vertexCount() * 7);
+        for (size_t k = 0; k < st.surface.bands.size(); ++k)
+        {
+            const engine::LevelSetSurface::Band& b = st.surface.bands[k];
+            for (size_t j = 0; j + 2 < b.pos.size(); j += 3)
+                v.insert(v.end(), {b.pos[j], b.pos[j + 1], b.pos[j + 2],
+                                   b.from[j], b.from[j + 1], b.from[j + 2], (float)k});
+            st.eta.push_back(b.eta);
+            st.bandEnd.push_back((int)(v.size() / 7));
+        }
+        st.mesh = std::make_unique<engine::Mesh>((int)(v.size() / 7), std::vector<int>{3, 3, 1});
+        st.mesh->setVertices(v.data(), v.size());
+        return true;
     }
 
     bool hasStored(int eqIndex, int side) const
     {
-        return eqIndex >= 0 && eqIndex < 3 && stored[eqIndex][side].mesh != nullptr;
+        return eqIndex >= 0 && eqIndex < 3 && !storedFiles[eqIndex][side].empty();
     }
 
-    // The stored surface of this side, if it was grown for the field and K order in use
-    // (else its first band would not meet the W_loc drawn here).
-    const StoredSurface* storedFor(int eqIndex, int side) const
+    // The stored surface of this side for the field and K order in use (else its first
+    // band would not meet the W_loc drawn here), read on first use.
+    const StoredSurface* storedFor(int eqIndex, int side)
     {
         if (!hasStored(eqIndex, side))
             return nullptr;
-        const StoredSurface& st = stored[eqIndex][side];
-        const engine::LevelSetSurface& s = st.surface;
         auto near = [](double a, double b) { return std::abs(a - b) <= 1e-4 * std::max(1.0, std::abs(b)); };
-        const bool match = near(s.tag("sigma"), cfg.sigma) && near(s.tag("rho"), cfg.rho) &&
-                           near(s.tag("beta"), cfg.beta) && (int)s.tag("order") == cfg.manifoldOrder &&
-                           (int)s.tag("eq", -1) == eqIndex && (int)s.tag("side", -1) == side;
-        return match ? &st : nullptr;
+        for (const StoredFile& f : storedFiles[eqIndex][side])
+        {
+            if (!near(f.rho, cfg.rho))
+                continue;
+            if (!loadStored(eqIndex, side, f))
+                return nullptr;
+            const StoredSurface& st = stored[eqIndex][side];
+            const engine::LevelSetSurface& s = st.surface;
+            const bool match = near(s.tag("sigma"), cfg.sigma) && near(s.tag("rho"), cfg.rho) &&
+                               near(s.tag("beta"), cfg.beta) && (int)s.tag("order") == cfg.manifoldOrder &&
+                               (int)s.tag("eq", -1) == eqIndex && (int)s.tag("side", -1) == side;
+            return match ? &st : nullptr;
+        }
+        return nullptr;
+    }
+
+    // rho let go within the stored surfaces' range (half a step either side): onto the
+    // nearest rho that has one, so Grow W has a surface there.
+    void snapRhoToStored()
+    {
+        std::vector<double> rhos;
+        for (const auto& row : storedFiles)
+            for (const std::vector<StoredFile>& list : row)
+                for (const StoredFile& f : list)
+                    rhos.push_back(f.rho);
+        if (rhos.empty())
+            return;
+        const auto [lo, hi] = std::minmax_element(rhos.begin(), rhos.end());
+        if (cfg.rho < *lo - 0.5 || cfg.rho > *hi + 0.5)
+            return;
+        double best = rhos[0];
+        for (double r : rhos)
+            if (std::abs(r - cfg.rho) < std::abs(best - cfg.rho))
+                best = r;
+        if ((float)best != cfg.rho)
+        {
+            cfg.rho = (float)best;
+            applyParams();
+        }
     }
 
     // The global branches: the curve each end has traced, and a bead at its tip.
@@ -2722,7 +2787,8 @@ private:
 
     std::array<EqView, 3> eqs;
     int eqCount = 0;
-    StoredSurface stored[3][2];    // [equilibrium][side], loaded at init
+    std::vector<StoredFile> storedFiles[3][2];   // [equilibrium][side], by rho
+    StoredSurface stored[3][2];    // [equilibrium][side]: the one read last (storedFor)
     int manifoldGen = 0;           // bumped by every new field / K order (stale workers drop)
     bool paramsDragging = false;   // a sigma/rho/beta slider is held (no workers yet)
     int hovered = -1;           // bead under the cursor (or its UI row), this frame

@@ -146,7 +146,7 @@ where each vertex grew from, and $\eta$ at its outer level set), appended to `ba
 blue by turns (`kStableBand`; orange-reds on $W^u$), so each geodesic circle shows.
 **Save surface** (`saveSurface`, once rings are accepted and no run is going) writes them
 with the parameters, K order, equilibrium, side and radius to
-`lorenz_manifold_growth/data/surface_<O|Cp|Cm>_<s|u>.lss`, which [[lorenz-manifold-growth]]
+`lorenz_manifold_growth/data/surface_<O|Cp|Cm>_<s|u>_rho<rho>.lss` (one file per $\rho$), which [[lorenz-manifold-growth]]
 grows ([[0011-precomputed-level-set-surfaces]]). Stored: $W^s(O)$ at the classic
 parameters, Grow rings 400 from the default settings — it ran 98 rings to $\eta = 97$
 (~1 min, debug, 2162 edge points at the end) and stopped at "r_new grows backward".

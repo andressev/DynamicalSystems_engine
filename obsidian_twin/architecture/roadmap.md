@@ -140,15 +140,14 @@ Orbits leaving $U$/$V$ dissolve on the rim, both at the same instant.
 `cudaGraphicsGLRegisterBuffer` on [[Mesh]]'s VBO (exposed via `Mesh::vbo()`) for
 GPU-side particle advection of flows. This is why all vertex buffers live in one class.
 
-## Later — manifold morph (parked 2026-10-20)
-Blend stored surfaces ([[LevelSetSurface]]) of different parameters in
-[[lorenz-manifold-growth]]. Correspondence from the method itself: label every point by
-$(\eta, \theta_0)$ — $\theta_0$ its angle on the $W_{loc}$ circle, inherited by $r_{new}$
-from its BVP start, averaged for points inserted at accept — store a resampled
-$(\eta, \theta_0)$ grid, save snapshots (e.g. $\rho = 24, 26, 28$), and a $\rho$ slider
-mixes the two nearest per vertex on the GPU. A picture, not the true manifold between
-snapshots: fine when they are close, misleading across bifurcations (homoclinic
-explosion at $\rho \approx 13.93$); $\theta_0$ holds only while rings don't fold.
+## Tried and dropped — manifold morph (2026-10-21)
+Blending stored $W^s(O)$ surfaces of different $\rho$ ([[lorenz-manifold-growth]]) on the
+GPU, on a shared grid. Matching by the start-circle angle $\theta_0$ fails (the strong
+stable direction crowds almost all of the outer surface into a tiny arc of $\theta_0$);
+matching by arc length around each ring from its $+z$ crossing worked (halfway blend of
+$\rho = 27, 28$ within 0.07 of the real 27.5 for 95% of points). Built and then dropped
+at the user's call: instead each stored $\rho$ keeps its own real surface, the $\rho$
+drag lands on stored values and `Grow W` grows that one.
 
 ## Later — $W^u(C_\pm)$ by level sets (parked 2026-10-20)
 Tried in [[learn-geodesic-level-sets]]: at $\rho = 28$ four rings ($\eta = 4$), then "r_new

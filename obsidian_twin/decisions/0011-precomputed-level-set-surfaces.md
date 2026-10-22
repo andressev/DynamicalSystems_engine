@@ -9,7 +9,8 @@ and lives in [[learn-geodesic-level-sets]].
 
 ## Decision
 Grow once in [[learn-geodesic-level-sets]] (Grow rings, then **Save surface**) and store
-the bands with [[LevelSetSurface]] in `sims/lorenz_manifold_growth/data/surface_<O|Cp|Cm>_<s|u>.lss`,
+the bands with [[LevelSetSurface]] in `sims/lorenz_manifold_growth/data/surface_<O|Cp|Cm>_<s|u>_rho<rho>.lss`
+(one file per $\rho$ since 2026-10-21),
 tagged with $\sigma, \rho, \beta$, K order, equilibrium, side and the $W_{loc}$ radius.
 The growth sim loads every file at init and offers its `Grow W` only when the tags match
 the live field and K order — otherwise the first band would not meet its $W_{loc}$.

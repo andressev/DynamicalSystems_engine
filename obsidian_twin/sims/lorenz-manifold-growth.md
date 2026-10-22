@@ -33,12 +33,16 @@ $W^s(C_\pm)$) the two ends of $W_{loc}$ flow on — forward in time on $W^u$, ba
 $W^s$ — each as a trajectory that keeps its whole curve, so the manifold is the Taylor
 arc plus the orbits of its ends ([[global-manifold-growth]]). For a *surface* the global
 manifold is grown ahead of time by geodesic level sets and stored
-([[0011-precomputed-level-set-surfaces]], [[LevelSetSurface]]): `loadStoredSurfaces` reads
-every `data/surface_<O|Cp|Cm>_<s|u>.lss` at init, and `storedFor` enables `Grow W` only
-when the file's tags match $\sigma, \rho, \beta$, K order, equilibrium and side (else the
-button is disabled — "classic parameters only" if a file exists, "not yet" if not).
-At the classic parameters $W^s(O)$ is stored out to geodesic distance $\eta = 97$ (98
-bands). Pressing it sets `global`; `shownEta` then grows at a steady geodesic speed, the
+([[0011-precomputed-level-set-surfaces]], [[LevelSetSurface]]), one file per $\rho$:
+`listStoredSurfaces` lists every `data/surface_<O|Cp|Cm>_<s|u>_rho<rho>.lss` at init, and
+`storedFor` reads the one at the current $\rho$ on first use (`loadStored`, one per side
+in memory) and enables `Grow W` only when its tags match $\sigma, \rho, \beta$, K order,
+equilibrium and side (else the button is disabled — "not stored at this rho" if the side
+has files, "not yet" if not). $W^s(O)$ is stored at $\rho = 15, 16, \dots, 30$ ($\sigma =
+10$, $\beta = 8/3$, K order 12, each from its own trusted $W_{loc}$ radius, each grown until
+the method stops — out to $\eta = 97$ at $\rho = 28$). Letting go of the `rho` drag inside
+that range (half a step either side) lands it on the nearest stored $\rho$
+(`snapRhoToStored`), so `Grow W` always has a surface there. Pressing it sets `global`; `shownEta` then grows at a steady geodesic speed, the
 whole surface in `surface growth time` (Pause/Resume, then Regrow). `renderSurfaces`
 draws every band up to the one holding `shownEta` with `band_vertex.glsl`: band $k$ at
 $\mathrm{clamp}(u_{grow} - k, 0, 1)$ slides its new points out from where they grew, and
@@ -198,8 +202,9 @@ Explorer thumbnail: `docs/screenshots/lorenz_manifold_growth.png`.
 Uniforms as [[lorenz-flow]] (glyph pair + bead pair).
 
 ## Future
-- Surfaces: only $W^s(O)$ at the classic parameters is stored; $W^u(C_\pm)$ (or other
-  parameters) need their own Grow rings + Save surface in [[learn-geodesic-level-sets]].
+- Surfaces: only $W^s(O)$ is stored ($\rho = 15 \dots 30$ at the classic $\sigma, \beta$);
+  $W^u(C_\pm)$ (or other parameters) need their own Grow rings + Save surface in
+  [[learn-geodesic-level-sets]].
 - A third sim with beads would justify extracting the bead/picking/halo/popup code
   into a module ([[0010-manifold-popup-and-copied-baseline]]).
 - Branches ignore `reverse`; a retracting branch would need a trail that can shrink.

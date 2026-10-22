@@ -2136,8 +2136,8 @@ private:
     }
 
     // "Save surface": the accepted bands with what they were grown for, as
-    // lorenz_manifold_growth/data/surface_<eq>_<s|u>.lss — what that sim grows when its
-    // parameters and K order are these.
+    // lorenz_manifold_growth/data/surface_<eq>_<s|u>_rho<rho>.lss — what that sim grows
+    // when its parameters and K order are these (one file per rho).
     void saveSurface()
     {
         engine::LevelSetSurface out = accepted;
@@ -2145,8 +2145,10 @@ private:
                     {"eq", (double)cfg.eq}, {"side", (double)side},
                     {"order", (double)cfg.manifoldOrder}, {"radius", radius}};
         static const char* kNames[] = {"O", "Cp", "Cm"};
+        char rho[32];
+        std::snprintf(rho, sizeof(rho), "%g", cfg.rho);
         const std::string path = std::string(kSurfaceDir) + "surface_" + kNames[cfg.eq] + "_" +
-                                 (side == 0 ? "s" : "u") + ".lss";
+                                 (side == 0 ? "s" : "u") + "_rho" + rho + ".lss";
         std::error_code ec;
         std::filesystem::create_directories(kSurfaceDir, ec);
         char b[200];
