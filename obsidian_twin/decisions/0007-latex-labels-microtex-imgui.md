@@ -4,8 +4,8 @@
 
 ## Context
 Sims want typeset math on screen: a label riding a trajectory's head, e.g.
-$\varphi^{t}(x_0)$ with the live $t$, and a corner readout of the system,
-$\dot{x} = f(x)$, showing the actual $f$ the user typed. ImGui alone only draws plain
+$\varphi^{t}(v_0)$ with the live $t$, and a corner readout of the system,
+$\dot{v} = f(v)$, showing the actual $f$ the user typed. ImGui alone only draws plain
 text, and KaTeX/MathJax would mean a browser engine.
 
 ## Decision
@@ -17,7 +17,7 @@ text, and KaTeX/MathJax would mean a browser engine.
    `tex::Graphics2D` (glyphs, lines, rects, paths) on an `ImDrawList`. That serves both
    cases with no new GL code: the foreground draw list at a screen point projected from
    the head (via [[Camera]]) for the trajectory label, and a fixed-corner window for
-   $\dot{x} = f(x)$.
+   $\dot{v} = f(v)$.
 3. MicroTeX's bundled platform backends (Qt, Skia, Cairo) were dropped when vendoring;
    `src/platform/gdi_win` is kept only as a reference implementation of
    `Graphics2D`.
@@ -31,9 +31,9 @@ change, which suits formulas that change on user input.
 - The backend is the gfx-layer module [[LatexImage]]; `engine` links `microtex`
   privately, so only `LatexImage.cpp` sees MicroTeX headers. Glyphs come from the
   vendored `.ttf` fonts via stb_truetype.
-- A label whose text changes every frame ($\varphi^t(x_0)$ with live $t$) would pay a
+- A label whose text changes every frame ($\varphi^t(v_0)$ with live $t$) would pay a
   full re-raster per frame — it wants a glyph cache or a static/dynamic split first.
-- $\dot{x} = f(x)$ needs the typed $f$ as LaTeX, i.e. a LaTeX printer in [[Expression]]
+- $\dot{v} = f(v)$ needs the typed $f$ as LaTeX, i.e. a LaTeX printer in [[Expression]]
   next to its GLSL codegen.
 - Upstream MicroTeX is quiet since 2024; it is vendored at a fixed commit (see
   `External/microtex/VENDORED.txt`), so that is acceptable.

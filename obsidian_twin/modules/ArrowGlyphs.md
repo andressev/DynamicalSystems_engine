@@ -11,7 +11,7 @@ code:
 `engine/include/engine/ArrowGlyphs.h`, `engine/src/ArrowGlyphs.cpp`
 
 ## What it is
-A batch of arrow glyphs — a field's quiver, the red $\dot{x}$ tangent on a particle, the
+A batch of arrow glyphs — a field's quiver, the red $\dot{v}$ tangent on a particle, the
 flow-direction cones on an eigenspace — drawn with **GPU instancing**. The CPU writes one
 8-float record per arrow (tail, unit direction, length, $|f|$); the shaft/cone/barb
 shapes are tiny static base meshes in the arrow's local frame and the vertex shader
@@ -53,4 +53,4 @@ Interface: `add`, `addField`, `clear`, `upload`, `drawShafts`, `drawHeads`, `arr
   grow (n + n/4 + 64 slack).
 - No sub-range draws (GL 3.3 has no base instance): split groups into batches.
 - Planned: an optional clip ball for the Lorenz equilibrium sim — shader-side `discard`
-  outside $B_r(x^*)$.
+  outside $B_r(v^*)$.

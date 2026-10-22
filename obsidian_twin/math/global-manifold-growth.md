@@ -8,25 +8,25 @@ code:
 # global-manifold-growth
 
 ## The idea
-The parametrization method gives only a *local* piece $W_{loc} = x^* + K(B_r)$ of a
+The parametrization method gives only a *local* piece $W_{loc} = v^* + K(B_r)$ of a
 stable or unstable manifold ([[lorenz-stable-manifold]]), trusted out to the radius
-where the invariance defect $|f(x^* + K(s)) - DK(s)\,\Lambda s|$ is still small. The
+where the invariance defect $|f(v^* + K(s)) - DK(s)\,\Lambda s|$ is still small. The
 global manifold is what the flow makes of that piece:
 
-$$W^u(x^*) = \bigcup_{t \ge 0} \varphi^t\big(W^u_{loc}\big), \qquad
-W^s(x^*) = \bigcup_{t \le 0} \varphi^t\big(W^s_{loc}\big).$$
+$$W^u(v^*) = \bigcup_{t \ge 0} \varphi^t\big(W^u_{loc}\big), \qquad
+W^s(v^*) = \bigcup_{t \le 0} \varphi^t\big(W^s_{loc}\big).$$
 
 So growing $W$ means *flowing* $W_{loc}$ — forward in time for the unstable side,
 backward for the stable one.
 
 ## Curves (dim 1)
-A one-dimensional $W_{loc}$ is an arc through $x^*$ with two ends $x^* + K(\pm r\,e)$.
+A one-dimensional $W_{loc}$ is an arc through $v^*$ with two ends $v^* + K(\pm r\,e)$.
 Its orbit is the arc itself plus the two orbits of the ends: every other point of the
 arc flows along it (the arc is invariant), so nothing new appears between. The
 global curve is therefore
 
-$$W = W_{loc} \;\cup\; \{\varphi^t(x^* + K(r e)) : t \gtrless 0\} \;\cup\;
-\{\varphi^t(x^* + K(-r e)) : t \gtrless 0\},$$
+$$W = W_{loc} \;\cup\; \{\varphi^t(v^* + K(r e)) : t \gtrless 0\} \;\cup\;
+\{\varphi^t(v^* + K(-r e)) : t \gtrless 0\},$$
 
 two trajectories — the **branches** — integrated with a good method (the Taylor
 method here) and drawn as the whole curve they have traced. At the classic Lorenz
@@ -76,7 +76,7 @@ $\Delta_{\min}$ and $\Delta_{\max}$.
 - The trusted radius is judged by the *relative* defect at sampled radii; a map that
   passes at every sample but misbehaves between them would go unnoticed (eight
   radii, 48 angles — fine for Lorenz).
-- Backward branches of $W^s(C_\pm)$ reach $|x| \sim 10^7$ in finite flow time; the
+- Backward branches of $W^s(C_\pm)$ reach $|v| \sim 10^7$ in finite flow time; the
   trajectory then stops (`Trajectory::diverged`) and the branch tip stays put.
 - A branch's direction is the manifold's own; the flow's `reverse` does not retract
   it (a trail cannot shrink).

@@ -71,7 +71,7 @@ onto the module is optional.
 
 ## Future
 Phase 2 (not yet implemented, scoped in the sim's original build prompt): grow the
-mesh past the convergence disk by integrating the **reversed** field $\dot x=-f(x)$
+mesh past the convergence disk by integrating the **reversed** field $\dot v=-f(v)$
 (RK4) from each ring point, shooting for the next geodesic level via 2×2 Newton in a
 transversal plane, with edge-based remeshing to keep spacing bounded. Keep behind a
 flag so the Taylor-only Phase 1 path stays available as ground truth.

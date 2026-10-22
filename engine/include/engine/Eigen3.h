@@ -8,7 +8,7 @@
 namespace engine {
 
 // Eigen-decomposition of a real 3x3 matrix, in double precision — the linearization
-// A = Df(x*) at an equilibrium. Eigenvalues come from the characteristic cubic (one
+// A = Df(v*) at an equilibrium. Eigenvalues come from the characteristic cubic (one
 // real root, deflated to a quadratic, all three Newton-polished); eigenvectors from the
 // null space of A - lambda I as a cross product of two of its rows. A complex pair is
 // stored as exact conjugates (values and vectors), so real bases built from it are

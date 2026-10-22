@@ -28,6 +28,13 @@ public:
     // both in one frame (e.g. RK4 for a ball, Taylor for singles): the timings add up.
     void advance(const std::vector<Trajectory*>& curves, const TaylorIntegrator& taylor,
                  const TaylorIntegrator::Jet& jet, double dt, double sampleStep);
+    // Both again with a step per curve (dts[i] for curves[i]), still one parallel pass —
+    // for sims that slow some curves down (a time change per curve).
+    void advance(const std::vector<Trajectory*>& curves, const Integrator& integrator,
+                 const Integrator::Field& f, const std::vector<double>& dts);
+    void advance(const std::vector<Trajectory*>& curves, const TaylorIntegrator& taylor,
+                 const TaylorIntegrator::Jet& jet, const std::vector<double>& dts,
+                 double sampleStep);
 
     // Bracket the trail/head draw calls in render().
     void beginDraw();
@@ -45,8 +52,10 @@ private:
     using Clock = std::chrono::steady_clock;
     static double smooth(double avg, double sample) { return avg * 0.9 + sample * 0.1; }
 
-    // integrate each curve with `step`, then flush them all; adds to this frame's sums
-    void run(const std::vector<Trajectory*>& curves, const std::function<void(Trajectory*)>& step);
+    // integrate each curve with `step` (given the curve's slot in `curves`, so its index
+    // is &slot - curves.data()), then flush them all; adds to this frame's sums
+    void run(const std::vector<Trajectory*>& curves,
+             const std::function<void(Trajectory* const&)>& step);
 
     GpuTimer gpu;
     Clock::time_point drawStart;

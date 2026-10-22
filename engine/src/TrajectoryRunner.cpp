@@ -33,8 +33,26 @@ void TrajectoryRunner::advance(const std::vector<Trajectory*>& curves,
     run(curves, [&](Trajectory* c) { c->integrate(taylor, jet, dt, sampleStep); });
 }
 
+void TrajectoryRunner::advance(const std::vector<Trajectory*>& curves,
+                               const Integrator& integrator, const Integrator::Field& f,
+                               const std::vector<double>& dts)
+{
+    run(curves, [&](Trajectory* const& c) {
+        c->integrate(integrator, f, dts[(size_t)(&c - curves.data())]);
+    });
+}
+
+void TrajectoryRunner::advance(const std::vector<Trajectory*>& curves,
+                               const TaylorIntegrator& taylor, const TaylorIntegrator::Jet& jet,
+                               const std::vector<double>& dts, double sampleStep)
+{
+    run(curves, [&](Trajectory* const& c) {
+        c->integrate(taylor, jet, dts[(size_t)(&c - curves.data())], sampleStep);
+    });
+}
+
 void TrajectoryRunner::run(const std::vector<Trajectory*>& curves,
-                           const std::function<void(Trajectory*)>& step)
+                           const std::function<void(Trajectory* const&)>& step)
 {
     frameCurves += (int)curves.size();
     auto t0 = Clock::now();

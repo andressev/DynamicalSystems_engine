@@ -16,7 +16,7 @@ active [[Sim]]; runs the main loop (see [[render-pipeline]]). Core layer — sim
 attach it, they receive it in `init(App&)`.
 
 ## Dependencies
-- Engine: [[Window]], [[Camera]], [[SimRegistry]], [[Sim]]
+- Engine: [[Window]], [[Camera]], [[SimRegistry]], [[Sim]], [[LatexBoard]]
 - External: glad, glfw, imgui
 
 ## How to use it
@@ -53,6 +53,9 @@ Sims use the `App&` handed to `init`:
   tap, so a sim reading the tap for its follow toggle never sees the hold as a tap).
   The recenter glides over `kRecenterEaseSeconds` (1 s): sims call [[Camera]]
   `easeOrbitTo`, which `run` advances each frame (`cam.updateEase(dt)`) before input.
+- **L** shows / hides the active sim's [[LatexBoard]] (`sims/<name>/board.tex`, set in
+  `switchTo`), **PageDown** / **PageUp** page it; drawn after the sim, under the panel
+  ([[0012-latex-board-per-sim]]).
 - **F11** toggles borderless full screen ([[Window]] `toggleFullscreen`; the window's
   maximize button enters it as well).
 - **H** toggles the Explorer panel (App's FPS/menu row + the sim's `drawUI`) in every

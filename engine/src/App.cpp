@@ -200,6 +200,14 @@ int App::run(const std::string& startSim)
                     showControls = !showControls;
                     controlsAuto = false;
                 }
+                // L shows / hides the sim's LaTeX board; PageDown / PageUp (what a
+                // presentation clicker sends) turn its pages
+                if (ImGui::IsKeyPressed(ImGuiKey_L, false))
+                    board.toggle();
+                if (board.visible() && ImGui::IsKeyPressed(ImGuiKey_PageDown, false))
+                    board.nextPage();
+                if (board.visible() && ImGui::IsKeyPressed(ImGuiKey_PageUp, false))
+                    board.prevPage();
                 // 1 held past kRecenterHoldSeconds: the sim's home view (a tap is the
                 // sim's own: follow toggle)
                 for (int key : {(int)ImGuiKey_1, (int)ImGuiKey_Keypad1})
@@ -225,6 +233,7 @@ int App::run(const std::string& startSim)
         if (activeSim)
         {
             activeSim->render(cam);
+            board.draw();   // under the panel
             if (panelFade > 0.0f)   // still drawn while it fades out
                 drawAppUI();
         }
@@ -242,6 +251,7 @@ int App::run(const std::string& startSim)
             activeSim.reset();
             activeIndex = -1;
             wantMenu = false;
+            board.close();
             pendingSwitch = -1;
         }
         else if (pendingSwitch >= 0)
@@ -263,6 +273,7 @@ void App::switchTo(int index)
     activeSim.reset(); // free the old sim's GL resources before creating the new one
     activeSim = registry.createByIndex(index);
     activeIndex = index;
+    board.setFile(std::string(SIMS_DIR) + registry.names()[index] + "/board.tex");
     activeSim->init(*this);
 }
 

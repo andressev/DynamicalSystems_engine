@@ -49,7 +49,7 @@ struct Lorenz {
             for (int j = 0; j < 3; ++j)
                 A[i][j] = J[i][j];
     }
-    // f(x* + u) = A u + Q(u, u): the quadratic part is the same at every equilibrium
+    // f(v* + u) = A u + Q(u, u): the quadratic part is the same at every equilibrium
     static InvariantManifold::Quadratic quadratic()
     {
         InvariantManifold::Quadratic Q{};
@@ -240,7 +240,7 @@ void testAgainstLorenzManifold()
     expectBelow("all coefficients match after rescaling", worst, 1e-9);
 }
 
-// Conjugacy phi^tau(x* + K(s)) == x* + K(e^{Lambda tau} s), integrated with RK4.
+// Conjugacy phi^tau(v* + K(s)) == v* + K(e^{Lambda tau} s), integrated with RK4.
 void testConjugacy(const char* name, const Vec3& xs, InvariantManifold::Side side, int order,
                    double r, double tau, double limit)
 {
@@ -288,7 +288,7 @@ void testConjugacy(const char* name, const Vec3& xs, InvariantManifold::Side sid
     expectBelow(what, worst, limit);
 }
 
-// LorenzSystem: f = 0 at every equilibrium, and f(x* + u) = Df(x*) u + Q(u, u) exactly
+// LorenzSystem: f = 0 at every equilibrium, and f(v* + u) = Df(v*) u + Q(u, u) exactly
 // (the field is quadratic, so the split has no remainder).
 void testLorenzSystem()
 {
@@ -326,8 +326,8 @@ void testLorenzSystem()
             }
         }
     }
-    expectBelow("|f(x*)| at O, C+, C-", worstZero, 1e-12);
-    expectBelow("f(x* + u) - (Df u + Q(u,u))", worstSplit, 1e-11);
+    expectBelow("|f(v*)| at O, C+, C-", worstZero, 1e-12);
+    expectBelow("f(v* + u) - (Df u + Q(u,u))", worstSplit, 1e-11);
     sys.rho = 0.5;
     check(sys.equilibria().size() == 1, "rho = 0.5: origin only", (double)sys.equilibria().size(), 1);
 }
@@ -341,7 +341,7 @@ void testTaylor()
     engine::TaylorIntegrator ti;
     ti.order = 20;
 
-    // x' = -y, y' = x: c_{k+1} = (-y_k, x_k) / (k+1); x(t) = (cos t, sin t)
+    // x' = -y, y' = x: c_{k+1} = (-y_k, x_k) / (k+1); v(t) = (cos t, sin t)
     engine::TaylorIntegrator::Jet osc = [](const double* x, double, int n, double* c) {
         c[0] = x[0];
         c[1] = x[1];

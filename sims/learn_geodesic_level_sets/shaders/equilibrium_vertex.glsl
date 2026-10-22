@@ -1,7 +1,7 @@
 #version 330 core
 
 // The equilibrium markers: a unit sphere (engine::Shapes, layout {3, 3, 2}) placed at
-// x* and scaled to u_radius. Drawn twice per marker: the solid bead, then (when it
+// v* and scaled to u_radius. Drawn twice per marker: the solid bead, then (when it
 // glows) a larger halo shell.
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;

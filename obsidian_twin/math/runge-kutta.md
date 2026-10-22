@@ -7,7 +7,7 @@ code:
 # runge-kutta
 
 ## The idea
-Integrating $\dot{\mathbf{x}} = F(\mathbf{x}, t)$ numerically means guessing where the
+Integrating $\dot{\mathbf{v}} = F(\mathbf{v}, t)$ numerically means guessing where the
 curve goes over one step $h$ from samples of $F$. Euler takes one sample at the start
 and walks straight — the error piles up fast. Runge–Kutta methods spend a few extra
 evaluations *inside* the step, at states Euler-predicted from the earlier samples, and
@@ -17,21 +17,21 @@ that is an enormous return, since a smooth-looking curve at a big step is worth 
 than a cheap wrong one.
 
 ## The equations
-One step from $(\mathbf{x}_n, t_n)$ of size $h$, as implemented:
+One step from $(\mathbf{v}_n, t_n)$ of size $h$, as implemented:
 
 **Euler** (order 1)
-$$\mathbf{x}_{n+1} = \mathbf{x}_n + h F(\mathbf{x}_n, t_n)$$
+$$\mathbf{v}_{n+1} = \mathbf{v}_n + h F(\mathbf{v}_n, t_n)$$
 
 **Midpoint RK2** (order 2)
-$$k_1 = F(\mathbf{x}_n, t_n), \qquad k_2 = F\!\left(\mathbf{x}_n + \tfrac{h}{2}k_1,\ t_n + \tfrac{h}{2}\right), \qquad \mathbf{x}_{n+1} = \mathbf{x}_n + h\,k_2$$
+$$k_1 = F(\mathbf{v}_n, t_n), \qquad k_2 = F\!\left(\mathbf{v}_n + \tfrac{h}{2}k_1,\ t_n + \tfrac{h}{2}\right), \qquad \mathbf{v}_{n+1} = \mathbf{v}_n + h\,k_2$$
 
 **Classic RK4** (order 4)
 $$\begin{aligned}
-k_1 &= F(\mathbf{x}_n,\ t_n) \\
-k_2 &= F\!\left(\mathbf{x}_n + \tfrac{h}{2}k_1,\ t_n + \tfrac{h}{2}\right) \\
-k_3 &= F\!\left(\mathbf{x}_n + \tfrac{h}{2}k_2,\ t_n + \tfrac{h}{2}\right) \\
-k_4 &= F\!\left(\mathbf{x}_n + h k_3,\ t_n + h\right) \\
-\mathbf{x}_{n+1} &= \mathbf{x}_n + \tfrac{h}{6}\left(k_1 + 2k_2 + 2k_3 + k_4\right)
+k_1 &= F(\mathbf{v}_n,\ t_n) \\
+k_2 &= F\!\left(\mathbf{v}_n + \tfrac{h}{2}k_1,\ t_n + \tfrac{h}{2}\right) \\
+k_3 &= F\!\left(\mathbf{v}_n + \tfrac{h}{2}k_2,\ t_n + \tfrac{h}{2}\right) \\
+k_4 &= F\!\left(\mathbf{v}_n + h k_3,\ t_n + h\right) \\
+\mathbf{v}_{n+1} &= \mathbf{v}_n + \tfrac{h}{6}\left(k_1 + 2k_2 + 2k_3 + k_4\right)
 \end{aligned}$$
 
 Local truncation error is $O(h^{p+1})$ and the accumulated (global) error over a fixed

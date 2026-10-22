@@ -24,6 +24,7 @@ add_library(engine STATIC
     "src/Trajectory.cpp"
     "src/TrajectoryRunner.cpp"
     "src/LatexImage.cpp"
+    "src/LatexBoard.cpp"
     "src/SimRegistry.cpp"
     "src/App.cpp"
     "${CMAKE_SOURCE_DIR}/External/Glad/src/glad.c"
@@ -56,3 +57,6 @@ target_link_libraries(engine PUBLIC
 # LaTeX layout for LatexImage (cmake/microtex.cmake); private: only LatexImage.cpp
 # includes MicroTeX headers.
 target_link_libraries(engine PRIVATE microtex)
+
+# App points its LatexBoard at sims/<name>/board.tex
+target_compile_definitions(engine PRIVATE SIMS_DIR="${CMAKE_SOURCE_DIR}/sims/")

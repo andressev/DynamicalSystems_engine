@@ -10,19 +10,19 @@
 
 namespace engine {
 
-// The local stable or unstable manifold of an equilibrium x* of a QUADRATIC field,
-//     f(x* + u) = A u + Q(u, u),
+// The local stable or unstable manifold of an equilibrium v* of a QUADRATIC field,
+//     f(v* + u) = A u + Q(u, u),
 // as a Taylor map K: R^k -> R^3 (k = 1 or 2) built by the parametrization method:
 // K conjugates the linear flow on the parameter to the true flow on the manifold,
-//     phi^t(x* + K(s)) = x* + K(e^{Lambda t} s).
+//     phi^t(v* + K(s)) = v* + K(e^{Lambda t} s).
 // It is the Lorenz-manifold recursion (math/lorenz-stable-manifold) generalised to any
 // equilibrium, either side, and a complex-conjugate eigenpair. Pure std (math layer).
 //
 // Parameter coordinates s are chosen so that K's linear part is the identity on the
 // eigenspace E: linear(s) = B s with B the real basis from Eigen3::realBasis (real
 // eigenvectors, or {Re v, Im v} for a pair). So a point theta of E has
-// s = toParam(theta), and x* + K(toParam(theta)) is h^{-1}(theta) restricted to E.
-// All results are relative to x* (add it yourself).
+// s = toParam(theta), and v* + K(toParam(theta)) is h^{-1}(theta) restricted to E.
+// All results are relative to v* (add it yourself).
 class InvariantManifold {
 public:
     using cd = std::complex<double>;
@@ -53,7 +53,7 @@ public:
     Vec3 basis(int i) const { return B[i]; }          // columns of B (real, not unit)
     Vec3 orthoBasis(int i) const { return O[i]; }     // orthonormal basis of E
 
-    // |f(x* + K(s)) - d/dt K(e^{Lambda t} s)|_{t=0}: zero for the exact manifold, so it
+    // |f(v* + K(s)) - d/dt K(e^{Lambda t} s)|_{t=0}: zero for the exact manifold, so it
     // measures truncation + convergence. maxDefect samples theta on the sphere of
     // radius r in E (a circle for k = 2, the two points +-r for k = 1) and returns the
     // largest defect relative to |f| there.

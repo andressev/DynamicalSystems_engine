@@ -14,7 +14,7 @@ A minimal R3 phase portrait of a diagonal linear system, with its stable (blue) 
 unstable (red) eigenspaces drawn in and balls of initial conditions dropped into the flow.
 
 ## What is being simulated
-$\dot{\mathbf{x}} = \Lambda \mathbf{x}$ with $\Lambda = \mathrm{diag}(\lambda_1, \lambda_2, \lambda_3)$,
+$\dot{\mathbf{v}} = \Lambda \mathbf{v}$ with $\Lambda = \mathrm{diag}(\lambda_1, \lambda_2, \lambda_3)$,
 so the eigenvectors are the coordinate axes and the flow is
 $x_i(t) = x_i(0)\, e^{\lambda_i t}$. The invariant subspaces split $\mathbb{R}^3$:
 $E^s = \mathrm{span}\{e_i : \lambda_i < 0\}$, $E^u = \mathrm{span}\{e_i : \lambda_i > 0\}$,
@@ -26,7 +26,7 @@ overlay and panel) for any typed field.
 
 ## How it works
 `init` builds the axes, a small dynamic subspace mesh, and the right-hand side
-$\Lambda\mathbf{x}$ as a lambda (no [[VectorField]] parse, the field is fixed in form).
+$\Lambda\mathbf{v}$ as a lambda (no [[VectorField]] parse, the field is fixed in form).
 `update` drops a ball on click, advances every [[Trajectory]] with RK4 ([[Integrator]]),
 and rebuilds the arrows / subspaces when a $\lambda$ or glyph setting changed.
 
@@ -36,7 +36,9 @@ is 2-dimensional, or a cube's edges when it is all of $\mathbb{R}^3$. Lines are 
 `GL_LEQUAL` so they win the depth tie with the grey axes; the planes go last without depth
 writes so trails show through them. Along every stable/unstable half-axis it also bakes
 shaded cones in the subspace's color pointing the way the flow runs — toward the origin
-on $E^s$, away on $E^u$; $E^c$ is at rest and gets none. Each subspace also gets an $E^s$/$E^u$/$E^c$ label in its color
+on $E^s$, away on $E^u$; $E^c$ is at rest and gets none. With `reverse` on, the flow is that of $-A$,
+so $E^s$ and $E^u$ trade places — colors, labels, cones, the $\dim$ readout, the spawn
+buttons, and circles already spawned are recolored. Each subspace also gets an $E^s$/$E^u$/$E^c$ label in its color
 (a [[LatexImage]] typeset once), anchored `label position` (default 0.35) of the extent out
 along its $+$ directions — on a line, its $+$ half; on a plane, the $(+,+)$ diagonal —
 drawn up-right of the anchor so it never covers the line, projected every frame (`labels`).
@@ -52,13 +54,15 @@ points through the volume. A click drops a **single** trajectory, always green �
 red/blue (subspaces) and white (ball) — drawn `singles thickness` times fatter and
 labelled $\phi^t(\text{seed})$ with the seed's actual coordinates. `Spawn circle in E^s`
 seeds `Manifold` curves (light blue) on a circle of radius $r$ about the origin in the
-plane of the first two stable axes (in a 1D $E^s$: the two points $\pm r$). Since
+plane of the first two stable axes (in a 1D $E^s$: the two points $\pm r$);
+`Spawn circle in E^u` does the same in $E^u$ (`ManifoldU`, light red), and in a 1D $E^u$
+it is `Spawn segment in E^u`: `circle particles` seeds evenly on $[-r, r]$. Since
 $A$ is diagonal, zero components stay zero, so these curves never leave $E^s$ and
 visibly contract to the origin.
 
-Every single also carries a red **tangent vector** $\dot{x} = Ax$ out of its head
+Every single also carries a red **tangent vector** $\dot{v} = Av$ out of its head
 (`rebuildTangents()`, every frame, constant on-screen size: `length` × camera distance, capped at 0.3 `domain radius` so zooming out never grows it past the scene),
-labelled $\dot{x}$ just beyond its tip; when it points up on screen the $\phi^t$ label
+labelled $\dot{v}$ just beyond its tip; when it points up on screen the $\phi^t$ label
 moves below the particle. `camera follows a single` makes the orbit camera track a
 single (newest, or `follow #`): `followCamera()` moves [[Camera]]'s `orbitCenter` and
 `position` together after the integration step, so it never lags; unticking returns to
@@ -79,18 +83,18 @@ Curves are not saved. Explorer thumbnail: `docs/screenshots/diagonal_linear.png`
 - [[TrajectoryRunner]] — advances every curve (integrate on all cores, then upload) and
   times integrate / upload / draw; readout under Other settings → Performance.
 - [[FlowKeys]] — arrow-key speed and direction.
-- [[Integrator]] — RK4 stepping of $\Lambda\mathbf{x}$, reverse time.
+- [[Integrator]] — RK4 stepping of $\Lambda\mathbf{v}$, reverse time.
 - [[Trajectory]] — one per seed: state, trail polyline, `drawHead()` particle.
 - [[Shader]] — one program from files, shared by every draw.
 - [[ArrowGlyphs]] — the glyph grid, the tangent arrows, and one head-only cone batch
   per subspace kind (instanced; colored per batch).
 - [[Mesh]] — dynamic subspace geometry; static axes.
 - [[Shapes]] — axis lines.
-- [[LatexImage]] — top-right $\dot{x} = Ax$ overlay, written out as the live
-  diagonal matrix times the column $(x_1, x_2, x_3)^T$, re-typeset only when a $\lambda_i$ changes (`show x' = Ax`); and
-  $\phi^t(x_0)$ above every single particle — $t$ is the ODE time integrated since its
-  seed (0 at $x_0$, negative in reverse), composed per frame from pieces typeset once
-  (`label singles with phi^t(x0)`).
+- [[LatexImage]] — top-right $\dot{v} = Av$ overlay, written out as the live
+  diagonal matrix times the column $(x, y, z)^T$, re-typeset only when a $\lambda_i$ changes (`show v' = Av`); and
+  $\phi^t(v_0)$ above every single particle — $t$ is the ODE time integrated since its
+  seed (0 at $v_0$, negative in reverse), composed per frame from pieces typeset once
+  (`label singles with phi^t(v0)`).
 - [[Camera]] — plain orbit camera, framed in `init`; zoom speed scaled by `domain radius`.
 
 ## The math
@@ -99,10 +103,10 @@ Curves are not saved. Explorer thumbnail: `docs/screenshots/diagonal_linear.png`
   plane `click depth` of the way to `orbitCenter`).
 
 ## Controls / uniforms
-**Other settings → LaTeX**: `equation` ($\dot x = Ax$), `phi^t labels` (also $\dot x$), `E^s, E^u labels` sizes in px, saved.
+**Other settings → LaTeX**: `equation` ($\dot v = Av$), `phi^t labels` (also $\dot v$), `E^s, E^u labels` sizes in px, saved.
 The panel is split into sections, each under a red `sectionHeader()` title: System,
-LaTeX overlays, Invariant subspaces, Flow, Ball of trajectories, Circle in
-$E^s$, Single trajectories, then a collapsed **Other settings** header (closed by default)
+LaTeX overlays, Invariant subspaces, Flow, Ball of trajectories, Circles in
+$E^s$ and $E^u$, Single trajectories, then a collapsed **Other settings** header (closed by default)
 holding Camera (`Reset camera`), Integrator (`method`, `max step h`, saved), Arrow field
 and Trails & particles, then Settings.
 **System**: $\lambda_1,\lambda_2,\lambda_3$ sliders, presets (sink, source, both saddles, a
@@ -116,10 +120,10 @@ auto/manual color scale; `show arrows` is also key **2**; the field fades in/out
 `speed`; ball `center`, `radius`, `particles`, `fill volume`, `single at center` (also drops
 a green single at the ball's centre — labelled, followable, removed with the ball),
 `Drop ball` (also key **B**; **V** drops one with a single at its centre under the cursor, where a click would seed, sized to the view (a fixed fraction of the visible half-height at that depth); V's balls stack up to 3 (`kMaxBalls`), the oldest — with its centre single — going when a fourth is dropped, while B and the button still replace; replaces the current ball), `Remove ball`; **click the view** for a single trajectory (seeded under the cursor on a camera-facing
-plane `click depth` of the way to the orbit center), `tangent vector x'` + `length`,
+plane `click depth` of the way to the orbit center), `tangent vector v'` + `length`,
 `Clear singles`, `camera follows a single` (also a tap of key **1** — switching off this way leaves the camera where it is; holding 1 recenters) + `newest` / `follow #`;
-`circle radius`, `circle particles`, `Spawn circle in E^s` (replaces the previous one),
-`Remove circle`; `show trails`, `trail points`, `trail width`, `trail alpha`,
+`circle radius`, `circle particles`, `Spawn circle in E^s`, `Spawn circle in E^u` / `Spawn segment in E^u` (each replaces
+its previous one), `Remove circles`; `show trails`, `trail points`, `trail width`, `trail alpha`,
 `particle size`, `singles thickness`.
 **Save settings** at the bottom.
 **Uniforms**: `view`, `projection`, `u_magScale`, `u_pointSize`, `u_useFade`,

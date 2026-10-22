@@ -48,17 +48,17 @@ const glm::vec3 kHaloColor = {1.0f, 0.38f, 0.22f};
 const glm::vec3 kGlassColor = {0.72f, 0.86f, 1.0f};
 const glm::vec3 kStableColor(0.25f, 0.45f, 1.0f);     // E^s, as in diagonal_linear
 const glm::vec3 kUnstableColor(1.0f, 0.25f, 0.22f);   // E^u
-const glm::vec3 kLinearArrowColor(0.92f, 0.92f, 0.98f);   // A(x - x*) next to f
+const glm::vec3 kLinearArrowColor(0.92f, 0.92f, 0.98f);   // A(v - v*) next to f
 // stage B: the three curves from each seed of the ring in E^s, and the overlays
 const glm::vec3 kPsiColor(1.0f, 0.62f, 0.25f);       // psi^t, the linear flow (orange)
 const glm::vec3 kFlatColor(0.35f, 0.95f, 0.45f);     // phi^t from the same point of E^s (green)
-const glm::vec3 kOnWColor(0.45f, 0.72f, 1.0f);       // phi^t from x* + K_s(theta), on W^s (blue)
+const glm::vec3 kOnWColor(0.45f, 0.72f, 1.0f);       // phi^t from v* + K_s(theta), on W^s (blue)
 const glm::vec3 kOnWuColor(1.0f, 0.55f, 0.45f);      // W^u, lighter than E^u
-const glm::vec3 kMiniStableColor(0.35f, 0.85f, 1.0f);    // T_{x*} W^s miniature (cyan)
-const glm::vec3 kMiniUnstableColor(1.0f, 0.62f, 0.2f);   // T_{x*} W^u miniature (orange)
+const glm::vec3 kMiniStableColor(0.35f, 0.85f, 1.0f);    // T_{v*} W^s miniature (cyan)
+const glm::vec3 kMiniUnstableColor(1.0f, 0.62f, 0.2f);   // T_{v*} W^u miniature (orange)
 const glm::vec3 kLinkColor(0.85f, 0.85f, 0.92f);     // psi^t <-> phi^t from the same seed, same t
-const glm::vec3 kFormulaColor(1.0f, 0.92f, 0.2f);    // x* + K_s(e^{Lambda t} s)
-// stage C: the linear ball U and its image V = x* + h~^{-1}(U)
+const glm::vec3 kFormulaColor(1.0f, 0.92f, 0.2f);    // v* + K_s(e^{Lambda t} s)
+// stage C: the linear ball U and its image V = v* + h~^{-1}(U)
 const glm::vec3 kUColor(1.0f, 0.70f, 0.40f);         // tinted like psi^t
 const glm::vec3 kVColor(0.45f, 1.0f, 0.55f);         // tinted like phi^t
 const glm::vec3 kWarnColor(1.0f, 0.7f, 0.25f);
@@ -153,7 +153,7 @@ constexpr float kMinSpeed = 1e-4f;   // slowest flow (arrow keys ramp to it loga
 
 constexpr int kTaylor = 3;   // singleMethod: Euler, RK2, RK4 (Integrator), then Taylor
 
-// What the arrow lattice in V shows (stage A): the field, its linearization at x*, both
+// What the arrow lattice in V shows (stage A): the field, its linearization at v*, both
 // at once, or what the linearization leaves out — the quadratic part Q(u, u).
 enum ArrowField { kFieldF = 0, kFieldLinear = 1, kFieldBoth = 2, kFieldNonlinear = 3 };
 
@@ -174,17 +174,17 @@ struct Settings {
     float hudSize = 24.0f;             // the HUD under it (its text scales along)
     float subspaceLabelSize = 30.0f;   // E^s, E^u
 
-    float ballRadius = 3.0f;      // r of V = B_r(x*)
+    float ballRadius = 3.0f;      // r of V = B_r(v*)
     bool showGlass = true;
     float glassStrength = 1.0f;
-    float beadRadius = 0.06f;     // much smaller than in lorenz_flow: x* is a point here
+    float beadRadius = 0.06f;     // much smaller than in lorenz_flow: v* is a point here
     bool showEqLabel = true;
     float eqLabelSize = 30.0f;
 
-    bool showSubspaces = true;    // stage A: E^s, E^u through x*
+    bool showSubspaces = true;    // stage A: E^s, E^u through v*
     float subspaceAlpha = 0.16f;
     int arrowField = kFieldF;
-    bool showHud = true;          // A = Df(x*), eigenvalues, dims, warning
+    bool showHud = true;          // A = Df(v*), eigenvalues, dims, warning
 
     // stage B: a ring of seeds in E^s
     float ringRadius = 0.6f;      // of r
@@ -193,18 +193,18 @@ struct Settings {
     bool showFlat = true;
     bool showOnW = true;
     bool showLinks = true;
-    bool showFormula = false;     // markers at x* + K_s(e^{Lambda t} s)
+    bool showFormula = false;     // markers at v* + K_s(e^{Lambda t} s)
     int manifoldOrder = 12;       // Taylor order of K_s
-    bool showStageLabels = true;  // phi^t(x_0) / psi^t(x_0) on every seed's pair
+    bool showStageLabels = true;  // phi^t(v_0) / psi^t(v_0) on every seed's pair
     float stageLabelSize = 30.0f;
 
     // stage C: Hartman-Grobman
-    float hgRadius = 1.5f;        // rho of the linear ball U = B_rho(x*)
+    float hgRadius = 1.5f;        // rho of the linear ball U = B_rho(v*)
     int hgPairs = 60;
     float hgGap = 1.0f;           // space between U and V, in units of rho
     bool showHgSubspaces = true;  // E^s, E^u inside U ("Linear ball U")
-    bool showHgMini = true;       // small E^s, E^u at x* in V, tangent to K(E^s), K(E^u)
-    bool showManifoldsV = false;  // W^s, W^u (x* + K_s(E^s), x* + K_u(E^u)) in V, stages A/B
+    bool showHgMini = true;       // small E^s, E^u at v* in V, tangent to K(E^s), K(E^u)
+    bool showManifoldsV = false;  // W^s, W^u (v* + K_s(E^s), v* + K_u(E^u)) in V, stages A/B
     float hgDiskRadius = 0.5f;    // a disk of seeds on a subspace, of rho
     int hgDiskSeeds = 60;
 
@@ -221,7 +221,7 @@ struct Settings {
     float waveAberration = 0.02f; // color split, in ball radii on screen
     float waveSeconds = 1.0f;
     bool showHgLinks = true;
-    bool showHgLabels = true;     // phi^t(x_0) / psi^t(theta_0) on the pairs
+    bool showHgLabels = true;     // phi^t(v_0) / psi^t(theta_0) on the pairs
     bool showHgPredicted = false; // also show phi^t, the true flow (yellow), beside h~(psi^t)
 
     bool showArrows = true;
@@ -407,8 +407,8 @@ void loadSettingsFile(Settings& s, const char* path)
 
 // ---- the sim --------------------------------------------------------------------
 
-// The local picture at one Lorenz equilibrium x*: the field and trajectories inside a
-// glass ball V = B_r(x*), everything clipped to it. Entered from lorenz_flow by
+// The local picture at one Lorenz equilibrium v*: the field and trajectories inside a
+// glass ball V = B_r(v*), everything clipped to it. Entered from lorenz_flow by
 // clicking a bead (App::requestSwitch + a handoff: same parameters, same camera);
 // Backspace hands back. Mode 2 of the Hartman-Grobman track — stages A/B/C land here
 // (M4-M6). See obsidian_twin/sims/lorenz-equilibrium.md.
@@ -458,7 +458,7 @@ public:
 
         rhs = [this](const double* x, double, double* dxdt) { system.eval(x, dxdt); };
         jet = [this](const double* x, double, int order, double* c) { system.jet(x, order, c); };
-        // psi^t: the linear field A(x - x*) and its jet (c_1 = A(x - x*), c_{k+1} = A c_k / (k+1)),
+        // psi^t: the linear field A(v - v*) and its jet (c_1 = A(v - v*), c_{k+1} = A c_k / (k+1)),
         // so stage B's linear curves run on the same method as the true ones
         rhsLinear = [this](const double* x, double, double* d) {
             for (int i = 0; i < 3; ++i)
@@ -578,7 +578,7 @@ public:
                     runner.advance(m, singleIntegrator, rhsLinear, h);
                 morphOde += std::abs(h);
             }
-            // stage C: psi^t from x* + theta, phi^t from x* + h~^{-1}(theta)
+            // stage C: psi^t from v* + theta, phi^t from v* + h~^{-1}(theta)
             if (!hgPairList.empty())
             {
                 std::vector<engine::Trajectory*> lin, tru;
@@ -745,8 +745,8 @@ public:
             shader.setInt("u_shadeMode", 1);
             glyphs.drawHeads(shader);
             shader.setInt("u_useRamp", 0);
-            // "both": A(x - x*) in flat white over the colored f, from the same points —
-            // they agree near x* and part ways toward the glass
+            // "both": A(v - v*) in flat white over the colored f, from the same points —
+            // they agree near v* and part ways toward the glass
             if (cfg.arrowField == kFieldBoth && !linearGlyphs.empty())
             {
                 shader.setVec3("u_color", kLinearArrowColor);
@@ -954,7 +954,7 @@ private:
             changed = true;
         }
         ImGui::SameLine();
-        ImGui::Checkbox("show x' = f(x)", &cfg.showSystemLatex);
+        ImGui::Checkbox("show v' = f(v)", &cfg.showSystemLatex);
         if (changed)
             applyParams();
     }
@@ -986,7 +986,7 @@ private:
             aimCamera(-1.0f, 3.2f * (hgActive ? cfg.hgRadius : cfg.ballRadius));
     }
 
-    // Sizes of everything typeset: the system, the HUD, the x* label, E^s / E^u.
+    // Sizes of everything typeset: the system, the HUD, the v* label, E^s / E^u.
     void drawLatexUI()
     {
         sectionHeader("LaTeX");
@@ -999,7 +999,7 @@ private:
         ImGui::SliderFloat("phi^t, psi^t labels", &cfg.stageLabelSize, 14.0f, 72.0f, "%.0f px");
     }
 
-    // Stage A: the linear picture at x* next to the true one.
+    // Stage A: the linear picture at v* next to the true one.
     void drawLinearizationUI()
     {
         sectionHeader("Linearization");
@@ -1013,7 +1013,7 @@ private:
         ImGui::SameLine();
         ImGui::Checkbox("HUD", &cfg.showHud);
         ImGui::SetNextItemWidth(200.0f);
-        if (ImGui::Combo("arrows", &cfg.arrowField, "f(x)\0A(x - x*)\0both\0f(x) - A(x - x*)\0"))
+        if (ImGui::Combo("arrows", &cfg.arrowField, "f(v)\0A(v - v*)\0both\0f(v) - A(v - v*)\0"))
             arrowsDirty = true;
     }
 
@@ -1048,7 +1048,7 @@ private:
         ImGui::SameLine();
         colored("links", &cfg.showLinks, kLinkColor);
         ImGui::SameLine();
-        colored("check x* + K(e^{Lt} s)", &cfg.showFormula, kFormulaColor);
+        colored("check v* + K(e^{Lt} s)", &cfg.showFormula, kFormulaColor);
     }
 
     void drawFlowUI()
@@ -1184,7 +1184,7 @@ private:
         }
     }
 
-    // Hold 1 (App::kRecenterHoldSeconds): glide to the camera defaults around x*.
+    // Hold 1 (App::kRecenterHoldSeconds): glide to the camera defaults around v*.
     void recenterCamera() override
     {
         camAimFrom = camAim;   // back to the pair's midpoint under the conjugacy
@@ -1220,7 +1220,7 @@ private:
 
     // ---- equilibrium, camera, handoff ---------------------------------------------
 
-    // New parameters or a new choice of x*: the field, the point, the arrows.
+    // New parameters or a new choice of v*: the field, the point, the arrows.
     void applyParams()
     {
         system.sigma = cfg.sigma;
@@ -1270,8 +1270,8 @@ private:
         return out;
     }
 
-    // E^s (blue) and E^u (red) through x*, cut to V: a line is a diameter with two
-    // arrows along it (in toward x* on E^s, out on E^u); a plane is a translucent disk
+    // E^s (blue) and E^u (red) through v*, cut to V: a line is a diameter with two
+    // arrows along it (in toward v* on E^s, out on E^u); a plane is a translucent disk
     // with its rim and two rings of A u arrows in it (A maps E to itself, so they lie in
     // the disk and show the rotation of a complex pair). All of R^3 (sink/source): none.
     void rebuildSubspaces()
@@ -1293,9 +1293,9 @@ private:
         }
     }
 
-    // The same picture inside U (radius rho, around x*: drawn with U's offset), plus the
+    // The same picture inside U (radius rho, around v*: drawn with U's offset), plus the
     // tessellated copy "Transform subspaces" bends onto K(E^s), K(E^u) and the
-    // miniatures at x* in V.
+    // miniatures at v* in V.
     void rebuildHgSubspaces()
     {
         hgSubspaceDraws.clear();
@@ -1312,11 +1312,11 @@ private:
                           hgMiniAnchor);
     }
 
-    // A tessellated E^s / E^u picture of radius r around x*: a plane as rings x segments
+    // A tessellated E^s / E^u picture of radius r around v*: a plane as rings x segments
     // of triangles (so a deformation, in the vertex stage or by `map`, bends it) with
     // its rim, a line as a strip of points. `map` sends theta to the drawn offset from
-    // x* (identity for the flat picture); with maxDist > 0 the rings / the strip stop
-    // where the image leaves that distance of x*.
+    // v* (identity for the flat picture); with maxDist > 0 the rings / the strip stop
+    // where the image leaves that distance of v*.
     template <class F>
     void buildSubspaceGrid(float r, engine::Mesh& mesh, std::vector<SubspaceDraw>& draws,
                            const glm::vec3* colors, F map, float maxDist, glm::vec3* anchors)
@@ -1438,7 +1438,7 @@ private:
         shader.setFloat("u_clipRadius", 0.0f);
     }
 
-    // The miniatures: E^s, E^u at kMiniFraction rho around x* in V — flat, where the
+    // The miniatures: E^s, E^u at kMiniFraction rho around v* in V — flat, where the
     // bent K(E^s), K(E^u) are tangent to them.
     float hgMiniFade() const
     {
@@ -1660,7 +1660,7 @@ private:
         }
     }
 
-    // T_{x*} W^s(x*) / T_{x*} W^u(x*) beside the miniatures, in their colors.
+    // T_{v*} W^s(v*) / T_{v*} W^u(v*) beside the miniatures, in their colors.
     void drawMiniLabels()
     {
         const float fade = hgMiniFade();
@@ -1673,7 +1673,7 @@ private:
             if (miniLabelTypeset[side] != cfg.subspaceLabelSize)
             {
                 miniLabelTypeset[side] = cfg.subspaceLabelSize;
-                miniLabel[side].set(side == 0 ? R"(T_{x^*}W^s(x^*))" : R"(T_{x^*}W^u(x^*))",
+                miniLabel[side].set(side == 0 ? R"(T_{v^*}W^s(v^*))" : R"(T_{v^*}W^u(v^*))",
                                     cfg.subspaceLabelSize, side == 0 ? kMiniStableColor : kMiniUnstableColor);
             }
             float sx, sy;
@@ -1704,13 +1704,13 @@ private:
         }
     }
 
-    // The HUD pieces, typeset when the linearization changes: A = Df(x*) with its
+    // The HUD pieces, typeset when the linearization changes: A = Df(v*) with its
     // numbers and the eigenvalues (a conjugate pair as a +- b i).
     void typesetHud()
     {
         hudDirty = false;
         auto num = [](double x) { return texNumber((float)x); };
-        std::string m = R"(A = Df(x^*) = \begin{pmatrix})";
+        std::string m = R"(A = Df(v^*) = \begin{pmatrix})";
         for (int i = 0; i < 3; ++i)
         {
             for (int j = 0; j < 3; ++j)
@@ -1768,7 +1768,7 @@ private:
 
     // ---- stage B: phi^t vs psi^t from E^s -------------------------------------------
 
-    // K_s for the current x* (parametrization method); the ring belongs to the old one.
+    // K_s for the current v* (parametrization method); the ring belongs to the old one.
     void buildManifold()
     {
         pairs.clear();
@@ -1779,7 +1779,7 @@ private:
 
     // ---- stage C: Hartman-Grobman --------------------------------------------------
 
-    // h~^{-1} = K_s + K_u at this x* (orders capped at ConjugacyMap's GLSL limit); the
+    // h~^{-1} = K_s + K_u at this v* (orders capped at ConjugacyMap's GLSL limit); the
     // pairs and the check belong to the old one.
     void buildConjugacy()
     {
@@ -1830,7 +1830,7 @@ private:
     }
 
     // Smallest Jacobian determinant of h~^{-1} over the linear ball (central
-    // differences on a lattice). It is 1 at x*; where it drops to 0 the map folds over
+    // differences on a lattice). It is 1 at v*; where it drops to 0 the map folds over
     // and stops being one-to-one.
     double hgMinDet(double rho) const
     {
@@ -1885,7 +1885,7 @@ private:
         hgCheck.safe = lo;
         hgCheck.safeIsMax = lo >= kSafeSearchMax;
 
-        // the linear ball never goes past where the conjugacy holds at this x*
+        // the linear ball never goes past where the conjugacy holds at this v*
         const float maxRho = std::max((float)hgCheck.safe, kMinHgRadius);
         if (cfg.hgRadius > maxRho)
         {
@@ -1949,7 +1949,7 @@ private:
     }
 
     // The two arrow fields of stage C on one lattice theta in B_rho: in V the true field
-    // at x* + h~^{-1}(theta), in U the linear one, A theta, at x* + theta (drawn shifted
+    // at v* + h~^{-1}(theta), in U the linear one, A theta, at v* + theta (drawn shifted
     // by hgOffset). One color/length scale for both.
     void rebuildHgArrows()
     {
@@ -1996,7 +1996,7 @@ private:
         hgArrowsV.upload();
     }
 
-    // Stage C labels: phi^t(x_0) over every green head in V, psi^t(theta_0) over every
+    // Stage C labels: phi^t(v_0) over every green head in V, psi^t(theta_0) over every
     // orange one in U, and a boxed h^{-1} at the middle of every link — the link is the
     // map, from the linear orbit's point to its partner. Same typeset pieces as stage B.
     void drawHgPairLabels()
@@ -2027,7 +2027,7 @@ private:
                                   &g.hOpen, &g.hClose);
                 }
                 if (inV > 0.01f && cfg.showHgPredicted)
-                    drawFlowLabel(q.tru->head(), g.phi, g.phiChars, g.x0, num, false, headRadius,
+                    drawFlowLabel(q.tru->head(), g.phi, g.phiChars, g.v0, num, false, headRadius,
                                   inV * std::max(q.truFade, 0.0f));
                 if (inU > 0.01f)
                     drawFlowLabel(q.lin->head() + off, g.psi, g.psiChars, g.theta0, num, true,
@@ -2059,7 +2059,7 @@ private:
     // Seeds on the sphere kMorphSeedFraction * rho in U flow under psi^t (orange) until
     // the first one hits U's border (morphFlowTime of ODE time at most), pause, then
     // every trail point and particle travels to V at once — the vertex shader
-    // (morph_vertex.glsl) sends theta to x* + shift (1 - s) + mix(theta, h~^{-1}(theta), s)
+    // (morph_vertex.glsl) sends theta to v* + shift (1 - s) + mix(theta, h~^{-1}(theta), s)
     // with s eased 0 -> 1 over morphSeconds — turning from orange to green, a ghost of U's
     // glass deforming into V alongside. They stay in V until the button is pressed again,
     // which carries them back to U (s 1 -> 0), and so on; a reseed, R / Clear all or
@@ -2399,8 +2399,8 @@ private:
             hgLabelU.set("U", S, kUColor);
             hgLabelV.set(R"(V = \tilde h(U))", S, kVColor);
             // the system each ball holds, between its name and the glass
-            hgSystemU.set(R"(\dot\theta = Df(x^*)\,\theta)", 0.85f * S, kUColor);
-            hgSystemV.set(R"(\dot x = f(x))", 0.85f * S, kVColor);
+            hgSystemU.set(R"(\dot\theta = Df(v^*)\,\theta)", 0.85f * S, kUColor);
+            hgSystemV.set(R"(\dot v = f(v))", 0.85f * S, kVColor);
         }
         const engine::Camera& cam = app->camera();
         glm::vec3 up = glm::normalize(glm::cross(glm::cross(cam.front, cam.up), cam.front));
@@ -2464,7 +2464,7 @@ private:
 
 
     // Seed pairs on the sphere kHgSeedFraction * rho in the linear ball: psi^t from
-    // x* + theta, phi^t from x* + h~^{-1}(theta). On E^s and E^u they stay paired
+    // v* + theta, phi^t from v* + h~^{-1}(theta). On E^s and E^u they stay paired
     // exactly (the parametrization method); in between h~^{-1} is an interpolation.
     void seedHgPairs()
     {
@@ -2483,7 +2483,7 @@ private:
         }
     }
 
-    // One pair from theta in B_rho: psi^t from x* + theta, phi^t from x* + h~^{-1}(theta).
+    // One pair from theta in B_rho: psi^t from v* + theta, phi^t from v* + h~^{-1}(theta).
     void seedHgPair(const engine::ConjugacyMap::Vec3& theta)
     {
         if (!hmOk || (int)hgPairList.size() >= kMaxHgPairs)
@@ -2504,8 +2504,8 @@ private:
     }
 
     // Stage C click: the point under the cursor on the camera-facing plane through each
-    // ball's centre — U at x* + hgOffset(), V at x*. Inside U it is theta itself; inside
-    // V it is x* + h~^{-1}(theta), so theta comes from the forward map. Either way the
+    // ball's centre — U at v* + hgOffset(), V at v*. Inside U it is theta itself; inside
+    // V it is v* + h~^{-1}(theta), so theta comes from the forward map. Either way the
     // pair is seeded at that theta, so the partner appears in the other ball.
     void dropHgPairUnderCursor()
     {
@@ -2538,7 +2538,7 @@ private:
         if (onPlane(xStar, p))                                   // V
         {
             engine::ConjugacyMap::Vec3 u = {p.x - xs[0], p.y - xs[1], p.z - xs[2]};
-            double theta[3] = {u[0], u[1], u[2]};   // warm start: h~^{-1} ~ identity near x*
+            double theta[3] = {u[0], u[1], u[2]};   // warm start: h~^{-1} ~ identity near v*
             hgForward(u, theta);
             if (std::sqrt(theta[0] * theta[0] + theta[1] * theta[1] + theta[2] * theta[2]) < rho)
                 seedHgPair({theta[0], theta[1], theta[2]});
@@ -2560,7 +2560,7 @@ private:
     // A pair dissolves when psi^t leaves the linear ball U — by the conjugacy phi^t
     // leaves V at that same instant — fading with the shockwave, then it is dropped.
     // Then the links (psi^t head -> phi^t head) and the predicted points
-    // x* + h~^{-1}(psi^t - x*) for the pairs still inside.
+    // v* + h~^{-1}(psi^t - v*) for the pairs still inside.
     void updateHgPairs(float dt)
     {
         if (hgPairList.empty())
@@ -2571,12 +2571,12 @@ private:
         {
             if (q.alive())
             {
-                // psi^t hits U's border: the round sphere |psi^t - x*| = rho
+                // psi^t hits U's border: the round sphere |psi^t - v*| = rho
                 const double* l = q.lin->state();
                 const double* x = q.tru->state();
                 bool linHit = glm::length(q.lin->head() - xStar) > (float)rho;
-                // phi^t hits V's border: the deformed surface x* + h~^{-1}(rho S^2), i.e.
-                // |h~(phi^t - x*)| = rho, h~ by Newton from last frame's value
+                // phi^t hits V's border: the deformed surface v* + h~^{-1}(rho S^2), i.e.
+                // |h~(phi^t - v*)| = rho, h~ by Newton from last frame's value
                 double thetaPrev[3] = {q.theta[0], q.theta[1], q.theta[2]};
                 hgForward({x[0] - xs[0], x[1] - xs[1], x[2] - xs[2]}, q.theta);
                 bool truHit = norm3(q.theta) >= rho;
@@ -2831,7 +2831,7 @@ private:
         }
         // V's main particles: psi^t's trail and head carried over by h~ on the GPU — the
         // Transform flow's shader at morph 1 with no shift maps every trail point
-        // x* + theta to x* + h~(theta) — in V's green; a crashed pair's trail fades with it
+        // v* + theta to v* + h~(theta) — in V's green; a crashed pair's trail fades with it
         if (inV > 0.01f && hmOk)
         {
             hm.bind();
@@ -2869,7 +2869,7 @@ private:
         shader.setFloat("u_pointSize", cfg.particleSize * px);
     }
 
-    // V = x* + h~^{-1}(U) (deformed on the GPU, green glass — red once the check says
+    // V = v* + h~^{-1}(U) (deformed on the GPU, green glass — red once the check says
     // the radius is too big) and, beside it, U (round, orange glass).
     void renderHgBalls(const engine::Camera& camera, const glm::mat4& view,
                        const glm::mat4& projection)
@@ -2919,7 +2919,7 @@ private:
                                "no conjugacy here: %s", hmError.c_str());
             return;
         }
-        // the slider's top is the safe radius of this equilibrium, recomputed whenever x*
+        // the slider's top is the safe radius of this equilibrium, recomputed whenever v*
         // or the parameters change — once the drag ends (it is a few hundred ms in Debug)
         if (hgCheckDirty && !ImGui::IsAnyItemActive())
             runHgCheck();
@@ -3036,7 +3036,7 @@ private:
     }
 
     // Pairs seeded on E^s (side 0) or E^u (side 1) inside U, hgDiskRadius * rho around
-    // x*: evenly along the line, a sunflower over the disk, a spiral through the ball.
+    // v*: evenly along the line, a sunflower over the disk, a spiral through the ball.
     // Added to the pairs on stage (Reseed or R to start over).
     void seedHgDisk(int side)
     {
@@ -3078,10 +3078,10 @@ private:
         return t;
     }
 
-    // A ring of seeds theta in E^s around x* (the two points +-theta when E^s is a line),
-    // each starting three curves at the same field time: psi^t from x* + theta under the
+    // A ring of seeds theta in E^s around v* (the two points +-theta when E^s is a line),
+    // each starting three curves at the same field time: psi^t from v* + theta under the
     // linear field, phi^t from that same point under the true field, and phi^t from
-    // x* + K_s(theta) — the point of W^s the conjugacy pairs with theta.
+    // v* + K_s(theta) — the point of W^s the conjugacy pairs with theta.
     void seedRing()
     {
         pairs.clear();
@@ -3115,7 +3115,7 @@ private:
     }
 
     // Links psi^t <-> phi^t from the same seed of E^s (same t: how far the true flow has
-    // left the linear one), then the formula points x* + K(e^{Lambda t} s) — where the
+    // left the linear one), then the formula points v* + K(e^{Lambda t} s) — where the
     // blue heads (phi^t on W^s) must sit if K_s is right.
     void rebuildStageMesh()
     {
@@ -3132,7 +3132,7 @@ private:
         stageMesh->setVertices(v.data(), v.size());
     }
 
-    // phi^t(x_0) on every green head (the true flow) and psi^t(theta_0) on every orange
+    // phi^t(v_0) on every green head (the true flow) and psi^t(theta_0) on every orange
     // one (the linear flow), each pair from the same seed of E^s — the pair the link
     // joins. t is the ODE time since seeding, composed per frame from pieces typeset once
     // (the lorenz_flow / vector_field pattern), phi above its head, psi below.
@@ -3151,15 +3151,15 @@ private:
             char num[32];
             std::snprintf(num, sizeof(num), "%.2f", t);
             if (cfg.showFlat)
-                drawFlowLabel(q.flat->head(), g.phi, g.phiChars, g.x0, num, true, headRadius,
+                drawFlowLabel(q.flat->head(), g.phi, g.phiChars, g.v0, num, true, headRadius,
                               contentFade);
-            if (cfg.showPsi)   // same seed x_0 as phi^t here (theta_0 is stage C's, in U)
-                drawFlowLabel(q.lin->head(), g.psi, g.psiChars, g.x0Psi, num, false, headRadius,
+            if (cfg.showPsi)   // same seed v_0 as phi^t here (theta_0 is stage C's, in U)
+                drawFlowLabel(q.lin->head(), g.psi, g.psiChars, g.v0Psi, num, false, headRadius,
                               contentFade);
         }
     }
 
-    // The phi / psi / (x_0) / (theta_0) / digit pieces, typeset once per size.
+    // The phi / psi / (v_0) / (theta_0) / digit pieces, typeset once per size.
     void drawStageLabelsPrepare()
     {
         StageLabelGlyphs& g = stageGlyphs;
@@ -3168,10 +3168,10 @@ private:
         {
             g.size = S;
             g.phi.set(R"(\phi)", S, kFlatColor);
-            g.x0.set(R"((x_0))", S, kFlatColor);
+            g.v0.set(R"((v_0))", S, kFlatColor);
             g.psi.set(R"(\psi)", S, kPsiColor);
             g.theta0.set(R"((\theta_0))", S, kPsiColor);
-            g.x0Psi.set(R"((x_0))", S, kPsiColor);
+            g.v0Psi.set(R"((v_0))", S, kPsiColor);
             g.hOpen.set(R"(\tilde h()", S, kFlatColor);
             g.hClose.set(R"())", S, kFlatColor);
             for (int i = 0; i < 12; ++i)
@@ -3286,7 +3286,7 @@ private:
         cam.orbitCenter = xStar;
     }
 
-    // The orbit stays centred on x* (it moves when rho is dragged). Runs after
+    // The orbit stays centred on v* (it moves when rho is dragged). Runs after
     // Camera::processInput, so position/front are recomputed for this frame.
     // The distance that frames U and V together: where the Show timeline ends.
     float hgPairRadius() const
@@ -3327,7 +3327,7 @@ private:
         cam.front = glm::normalize(cam.orbitCenter - cam.position);
     }
 
-    // Fade out, then hand back to lorenz_flow (handBack) — which zooms out from x*.
+    // Fade out, then hand back to lorenz_flow (handBack) — which zooms out from v*.
     void backToGlobal()
     {
         if (!app->hasSim(kFlowSim) || leaving)
@@ -3356,7 +3356,7 @@ private:
         return saveSettingsFile(cfg, kSettingsPath);
     }
 
-    // The bead at x* (always lit — it is the one you zoomed onto), or its halo.
+    // The bead at v* (always lit — it is the one you zoomed onto), or its halo.
     void renderBead(const engine::Camera& camera, const glm::mat4& view,
                     const glm::mat4& projection, bool halo, const glm::vec3& center, float alpha)
     {
@@ -3436,7 +3436,7 @@ private:
                          ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
         if (cfg.showSystemLatex)
             systemLatex.draw();
-        // while U is beside V its own label says theta' = Df(x*) theta, and the HUD would
+        // while U is beside V its own label says theta' = Df(v*) theta, and the HUD would
         // sit right on top of it
         if (cfg.showHud && hgSide < 0.01f)
             drawHud();
@@ -3475,7 +3475,7 @@ private:
 
     // ---- trajectories -------------------------------------------------------------
 
-    // Under the cursor on the camera-facing plane through x*; only inside V.
+    // Under the cursor on the camera-facing plane through v*; only inside V.
     void dropSingleUnderCursor()
     {
         glm::vec3 origin, dir;
@@ -3506,7 +3506,7 @@ private:
         std::erase_if(curves, [kind](const Curve& c) { return c.kind == kind; });
     }
 
-    // Seeds around x*, replacing the previous ones: a Fibonacci sphere of radius
+    // Seeds around v*, replacing the previous ones: a Fibonacci sphere of radius
     // seedRadius * r, or uniform through that ball.
     void dropSeeds()
     {
@@ -3588,7 +3588,7 @@ private:
                            system.eval(x, v);
                            return glm::vec3((float)v[0], (float)v[1], (float)v[2]);
                        });
-        // A(x - x*) at the same points, and what it leaves out
+        // A(v - v*) at the same points, and what it leaves out
         linearVectors.resize(gridPoints.size());
         for (size_t k = 0; k < gridPoints.size(); ++k)
         {
@@ -3602,8 +3602,8 @@ private:
         else if (cfg.arrowField == kFieldLinear)
             gridVectors = linearVectors;
 
-        // f and A(x - x*) share one color/length scale so they compare; the remainder
-        // (small near x*) gets its own
+        // f and A(v - v*) share one color/length scale so they compare; the remainder
+        // (small near v*) gets its own
         sampledMaxMag = 0.0f;
         for (const glm::vec3& v : gridVectors)
             sampledMaxMag = std::max(sampledMaxMag, glm::length(v));
@@ -3639,8 +3639,8 @@ private:
     // Pieces of the stage B labels, typeset once per size.
     struct StageLabelGlyphs {
         float size = 0.0f;
-        engine::LatexImage phi, x0, psi, theta0;
-        engine::LatexImage x0Psi;   // "(x_0)" in psi's color: stage B's psi^t starts at x_0 too
+        engine::LatexImage phi, v0, psi, theta0;
+        engine::LatexImage v0Psi;   // "(v_0)" in psi's color: stage B's psi^t starts at v_0 too
         engine::LatexImage hOpen, hClose;   // "\tilde h(" ... ")" around psi^t(theta_0), in V's green
         engine::LatexImage phiChars[12], psiChars[12];   // superscript t, kTimeLabelChars order
     };
@@ -3648,16 +3648,16 @@ private:
 
     // One stage C pair: psi^t in the linear ball, phi^t from its h~^{-1} image.
     struct HgPair {
-        double linSeed[3] = {};   // x* + theta
-        double truSeed[3] = {};   // x* + h~^{-1}(theta)
+        double linSeed[3] = {};   // v* + theta
+        double truSeed[3] = {};   // v* + h~^{-1}(theta)
         double t0 = 0.0;          // field time it was seeded at
         std::unique_ptr<engine::Trajectory> lin, tru;
         // each crashes on its own ball's border, then stops and dissolves: psi^t when
-        // |psi^t - x*| reaches rho, phi^t when |h~(phi^t - x*)| does (V's real border)
+        // |psi^t - v*| reaches rho, phi^t when |h~(phi^t - v*)| does (V's real border)
         bool linCrashed = false, truCrashed = false;
         float linFade = 1.0f, truFade = 1.0f;
         double theta0[3] = {};    // the seed theta
-        double theta[3] = {};     // h~(phi^t - x*), followed frame to frame (Newton)
+        double theta[3] = {};     // h~(phi^t - v*), followed frame to frame (Newton)
         double linPrev[3] = {}, truPrev[3] = {};   // states before this frame's step
         glm::vec3 linAt{0.0f}, truAt{0.0f};        // where each exploded (frozen head)
         int linHead = -1, truHead = -1;            // their slots in headMesh
@@ -3695,20 +3695,20 @@ private:
     // One seed theta of the stage B ring and its three curves.
     struct StagePair {
         engine::InvariantManifold::Param s{};   // theta's manifold parameter
-        double flatSeed[3] = {};                // x* + theta, on E^s
-        double onSeed[3] = {};                  // x* + K_s(s), on W^s
+        double flatSeed[3] = {};                // v* + theta, on E^s
+        double onSeed[3] = {};                  // v* + K_s(s), on W^s
         double t0 = 0.0;
         std::unique_ptr<engine::Trajectory> lin, flat, onW;
     };
 
     engine::App* app = nullptr;
     engine::Shader shader;        // glyphs + trails, clipped to V
-    engine::Shader eqShader;      // the bead at x* + its halo
+    engine::Shader eqShader;      // the bead at v* + its halo
     engine::Shader glassShader;   // the ball V
     std::unique_ptr<engine::Mesh> sphereMesh;   // bead + halo
     std::unique_ptr<engine::Mesh> glassMesh;    // the ball V
     engine::ArrowGlyphs glyphs;
-    engine::ArrowGlyphs linearGlyphs;           // A(x - x*), shown with f in "both"
+    engine::ArrowGlyphs linearGlyphs;           // A(v - v*), shown with f in "both"
     std::unique_ptr<engine::Mesh> subspaceMesh;
     std::vector<SubspaceDraw> subspaceDraws;
     engine::ArrowGlyphs subspaceArrows[2];      // E^s, E^u: the linear flow on them
@@ -3718,7 +3718,7 @@ private:
     glm::vec3 hgLabelAnchor[2]{glm::vec3(NAN), glm::vec3(NAN)};
     std::unique_ptr<engine::Mesh> hgGridMesh;       // tessellated E^s, E^u in U: "Transform subspaces"
     std::vector<SubspaceDraw> hgGridDraws;
-    std::unique_ptr<engine::Mesh> hgMiniMesh;       // the miniatures at x* in V
+    std::unique_ptr<engine::Mesh> hgMiniMesh;       // the miniatures at v* in V
     std::vector<SubspaceDraw> hgMiniDraws;
     glm::vec3 hgMiniAnchor[2]{glm::vec3(NAN), glm::vec3(NAN)};
     engine::LatexImage miniLabel[2];
@@ -3747,9 +3747,9 @@ private:
     std::vector<engine::LorenzSystem::Equilibrium> found;
     int eqCount = 0;
     glm::vec3 xStar{0.0f};
-    double A[3][3] = {};                        // Df(x*)
-    double xs[3] = {};                          // x*, in double
-    engine::Integrator::Field rhsLinear;        // A(x - x*)
+    double A[3][3] = {};                        // Df(v*)
+    double xs[3] = {};                          // v*, in double
+    engine::Integrator::Field rhsLinear;        // A(v - v*)
     engine::TaylorIntegrator::Jet jetLinear;
     engine::InvariantManifold Ws;               // K_s, the local W^s
     bool manifoldOk = false;
@@ -3779,7 +3779,7 @@ private:
     float hgMaxMag = 1.0f;
     bool hgArrowsDirty = true;
     engine::LatexImage hgLabelU, hgLabelV;
-    engine::LatexImage hgSystemU, hgSystemV;   // theta' = Df(x*) theta, x' = f(x)
+    engine::LatexImage hgSystemU, hgSystemV;   // theta' = Df(v*) theta, v' = f(v)
     engine::LatexImage hInvLabel;               // on the links
     float hInvLabelSize = 0.0f;
     std::vector<Burst> bursts;

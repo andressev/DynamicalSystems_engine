@@ -43,7 +43,7 @@ Interface:
   Parses over `{"x","y","t"}` or `{"x","y","z","t"}`; all-or-nothing.
 - `eval(x, t, out)`, `magnitude(x, t)` — the field itself.
 - `latex()` — each component typeset via `Expression::latex` over its own variable
-  names, for an on-screen $\dot{\mathbf{x}} = f(\mathbf{x})$ ([[vector-field]]).
+  names, for an on-screen $\dot{\mathbf{v}} = f(\mathbf{v})$ ([[vector-field]]).
 - `dim()`, `valid()`, `variables()`, `sources()` — what it was built from.
 - `usesTime()` — true iff some component actually mentions $t$ (via
   `Expression::usesVariable`). Sims use it to decide whether a glyph grid has to be

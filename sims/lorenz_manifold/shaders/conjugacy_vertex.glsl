@@ -10,7 +10,7 @@ layout(location = 0) in vec3 aPos;   // unit sphere point, or (x, y, 0) in the u
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
-uniform vec3 u_center;     // x*
+uniform vec3 u_center;     // v*
 uniform float u_radius;    // r of B_r(0)
 uniform int u_mode;        // 0 = sphere, 1 = disk in E^s
 uniform vec3 u_e0;         // orthonormal basis of E^s (disk mode)

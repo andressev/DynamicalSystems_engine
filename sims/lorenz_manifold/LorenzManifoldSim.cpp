@@ -868,7 +868,7 @@ private:
         hmShader.setMat4("model", model);
         hmShader.setMat4("view", view);
         hmShader.setMat4("projection", projection);
-        hmShader.setVec3("u_center", glm::vec3(0.0f));   // x* = origin
+        hmShader.setVec3("u_center", glm::vec3(0.0f));   // v* = origin
         hmShader.setFloat("u_radius", hmRadius);
         hmShader.setVec3("u_eye", camera.position);
         auto e0 = hm.stable().orthoBasis(0), e1 = hm.stable().orthoBasis(1);

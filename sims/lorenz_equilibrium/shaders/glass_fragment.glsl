@@ -1,6 +1,6 @@
 #version 330 core
 
-// The glass balls: V = B_r(x*) and, in stage C, U and the deformed V (drawn last,
+// The glass balls: V = B_r(v*) and, in stage C, U and the deformed V (drawn last,
 // blended, no depth writes). Fresnel-weighted: nearly clear face-on, bright at the
 // silhouette, plus a sharp highlight; back faces at half strength so the far wall reads
 // as the inside of the ball.

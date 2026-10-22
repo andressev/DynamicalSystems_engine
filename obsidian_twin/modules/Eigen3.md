@@ -13,7 +13,7 @@ code:
 
 ## What it is
 Eigenvalues and eigenvectors of a real $3\times 3$ matrix in double precision — the
-linearization $A = Df(x^*)$ at an equilibrium, from which $E^s$, $E^u$ and
+linearization $A = Df(v^*)$ at an equilibrium, from which $E^s$, $E^u$ and
 hyperbolicity are read. Hand-rolled instead of vendoring the Eigen library, so the
 math layer stays std-only and CUDA-portable; $3\times3$ is small enough to do exactly.
 M1 of the Hartman–Grobman track in [[roadmap]].

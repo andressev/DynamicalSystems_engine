@@ -117,7 +117,7 @@ struct Settings {
     int eq = 0;                   // O, C+, C- (the 2-D side of it is shown)
     int manifoldOrder = 12;       // K's Taylor order
 
-    int rings = 10;               // the mesh: rings around x* ...
+    int rings = 10;               // the mesh: rings around v* ...
     int segs = 48;                // ... of this many vertices each
     bool showMesh = false;
     float fillAlpha = 0.3f;
@@ -162,7 +162,7 @@ struct Settings {
     int growRings = 10;                // "Grow rings": how many in one run
     bool showAxes = false;
 
-    // orbit view around x* (camRadius <= 0: frame the patch)
+    // orbit view around v* (camRadius <= 0: frame the patch)
     float camTheta = 0.6f, camPhi = 1.1f, camRadius = 0.0f;
     float orbitSpeed = 1.2f;      // rad/s
     float zoomSpeed = 0.0f;       // world units/s, <= 0: scale with the view
@@ -442,7 +442,7 @@ public:
         stepSolveAll();
 
         // the particles: the manifold's own direction of time — backward on W^s (into the
-        // past, away from x*), forward on W^u — times the arrow keys' speed and direction
+        // past, away from v*), forward on W^u — times the arrow keys' speed and direction
         syncHits();
         if (playing && !particles.empty())
         {
@@ -913,10 +913,10 @@ private:
         return lo;
     }
 
-    // The mesh: x*, `rings` - 1 inner rings of `segs` vertices x* + K(theta) with theta on
+    // The mesh: v*, `rings` - 1 inner rings of `segs` vertices v* + K(theta) with theta on
     // circles of radius r i / rings in E, and the edge (theta at radius r) whose points
     // follow the method's spacing rule (spreadEdge). One buffer holds the triangles (a
-    // fan around x*, two per quad between inner rings, the band between the last inner
+    // fan around v*, two per quad between inner rings, the band between the last inner
     // ring and the edge merged by angle), their edges as line pairs (ring loops, spokes,
     // diagonals, the edge, the band's connectors), then every vertex as a point — the
     // edge's last, so they double as the boundary loop.
@@ -956,7 +956,7 @@ private:
         pts.insert(pts.end(), edge.begin(), edge.end());
         edgeIndex = std::min(edgeIndex, E - 1);
 
-        // vertex j of inner ring (0 = x*), of the edge; both wrap around
+        // vertex j of inner ring (0 = v*), of the edge; both wrap around
         auto at = [&](int ring, int j) -> const glm::vec3& {
             return ring == 0 ? pts[0] : pts[1 + (size_t)(ring - 1) * S + ((j % S + S) % S)];
         };
@@ -1198,7 +1198,7 @@ private:
         ImGui::PopStyleVar();
     }
 
-    // K(theta) relative to x*, theta a point of E.
+    // K(theta) relative to v*, theta a point of E.
     glm::vec3 onPatch(const glm::vec3& theta) const
     {
         const engine::InvariantManifold& k = K[side];
@@ -1206,7 +1206,7 @@ private:
         return glm::vec3((float)p[0], (float)p[1], (float)p[2]);
     }
 
-    // The edge at parameter a: x* + K(radius (cos a e0 + sin a e1)) at layer 0 — the
+    // The edge at parameter a: v* + K(radius (cos a e0 + sin a e1)) at layer 0 — the
     // true curve, not the mesh's polygon — and the accepted ring's polyline after.
     glm::vec3 edgePoint(float a) const
     {
@@ -2853,7 +2853,7 @@ private:
 
     // ---- camera, labels, handoff ----------------------------------------------------
 
-    // Orbit around x* at kFramingScale patch radii (or the saved distance); eased when
+    // Orbit around v* at kFramingScale patch radii (or the saved distance); eased when
     // asked, else at once.
     void frameCamera(bool eased)
     {
@@ -3009,7 +3009,7 @@ private:
     int fillCount = 0, edgeCount = 0, pointCount = 0, boundaryFirst = 0;
     glm::vec3 labelAnchor{0.0f};
     float meshFade = 0.0f;
-    std::vector<glm::vec3> verts;     // the mesh's vertices: x*, then ring by ring
+    std::vector<glm::vec3> verts;     // the mesh's vertices: v*, then ring by ring
     glm::vec3 basis0{1.0f, 0.0f, 0.0f}, basis1{0.0f, 1.0f, 0.0f};   // E, orthonormal
 
     // the edge point r (edge vertex index, -1: none) and its construction
@@ -3021,7 +3021,7 @@ private:
     float edgeLabelSize = 0.0f;
     float patchLabelShown = 0.0f;
     std::vector<float> edgeAngles;    // the edge's points, by angle in E (spreadEdge)
-    glm::dvec3 eqPosD{0.0};           // x*, double (the BVP)
+    glm::dvec3 eqPosD{0.0};           // v*, double (the BVP)
 
     // the geodesic BVP: solved edge points, the mids between them, the ring's Delta_i
     std::vector<Solution> solutions;  // sorted by edge vertex

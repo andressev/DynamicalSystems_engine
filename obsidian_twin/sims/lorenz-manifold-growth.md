@@ -17,18 +17,18 @@ code:
 `lorenz_manifold_growth_standalone`.
 
 The global Lorenz flow with its equilibria as beads, where the stable and unstable
-manifold of each equilibrium is *grown*: first the local Taylor patch out of $x^*$, then
+manifold of each equilibrium is *grown*: first the local Taylor patch out of $v^*$, then
 the global manifold carried on by the flow.
 
 ## What is being simulated
 The same picture as [[lorenz-flow]] — arrow field, balls and singles, the beads $O$,
 $C_\pm$ — minus the zoom/handoff (a click on a bead no longer flies to it). Hovering a
-bead opens a **popup** beside it with two sections, $W^u(x^*)$ and $W^s(x^*)$ (the
+bead opens a **popup** beside it with two sections, $W^u(v^*)$ and $W^s(v^*)$ (the
 actual name in the notation: $W^u(O)$, $W^s(C_+)$...). Each section first offers
-**Grow $W^u_{\mathrm{loc}}(x^*)$**: the patch of the parametrization method
-([[lorenz-stable-manifold]], [[InvariantManifold]]) grows out of $x^*$ over
+**Grow $W^u_{\mathrm{loc}}(v^*)$**: the patch of the parametrization method
+([[lorenz-stable-manifold]], [[InvariantManifold]]) grows out of $v^*$ over
 `growth time`, out to the radius where the map is still trusted. Once grown, the
-section offers **Grow $W^u(x^*)$**: for a *curve* (at the classic parameters $W^u(O)$,
+section offers **Grow $W^u(v^*)$**: for a *curve* (at the classic parameters $W^u(O)$,
 $W^s(C_\pm)$) the two ends of $W_{loc}$ flow on — forward in time on $W^u$, backward on
 $W^s$ — each as a trajectory that keeps its whole curve, so the manifold is the Taylor
 arc plus the orbits of its ends ([[global-manifold-growth]]). For a *surface* the global
@@ -72,7 +72,7 @@ faster). Until its equilibrium is `ready` a side shows "computing..." in the pop
 cannot be grown; what was grown locally reappears at the new radius. `init` (and the
 handoff back) computes synchronously (`computeManifoldsNow`). `applyManifolds` then
 sets the equilibrium's [[ConjugacyMap]] from $K_s, K_u$ (needed by every surface) and
-runs `buildLocal`: a curve as two strips of `kCurveSteps` points $x^* + K(\pm r\,e)$
+runs `buildLocal`: a curve as two strips of `kCurveSteps` points $v^* + K(\pm r\,e)$
 along the orthonormal basis of $E$ (on the CPU); a surface as the *unit disk of $E$* in
 `kRings` $\times$ `kSegs` triangles followed by every ring as a loop. Each side keeps its
 own dynamic [[Mesh]].
@@ -90,8 +90,9 @@ to leave the screen in $\approx 0.09$ field time). Running backward, a curve's s
 scaled so its arc speed is at most `backward speed cap` (default 15 world units per
 field time) — a time change only, the traced curve is the same — and a curve farther
 than `pause beyond` $\times$ `domain radius` (default 12.5, about 375 units) from the cube's centre stands
-still until the flow runs forward again. Curves at full step integrate together in
-parallel, slowed ones one by one. Forward curves are untouched. Hover
+still until the flow runs forward again. Every moving curve integrates in one parallel
+pass with its own step (the per-curve-step `TrajectoryRunner::advance`). Forward curves
+are untouched. Hover
 picking (`pickEquilibrium`, the lorenz_flow ray–sphere test), a click on a bead
 *pins* its popup (`togglePin`; a click elsewhere drops a single as before), glow eased
 toward the hovered / popup bead, `grow` of every local manifold eased $0 \to 1$,
@@ -104,11 +105,18 @@ mouse is on the bead or on the popup (`kPopupGrace` of slack only for the trip f
 the bead; once the mouse has been on it, `popupEntered`, leaving closes it at once), or
 for good while pinned (small `x`, or click the bead again, to unpin). Header: the name
 and type; a `Ball` button + radius slider (`eqBallRadius`): a ball of trajectories
-around $x^*$ via `dropBall` (the panel's particle count / fill volume, stacks up to
-`kMaxBalls`); then $W^u$ then $W^s$, each header with a `ball` button
-(`dropManifoldBall`: `ballCount` seeds $x^* + K(\theta)$ on $W_{loc}$ within
-$\min(\texttt{eqBallRadius}, r)$ — evenly on the segment, a sunflower on the disk — in
-the side's color). Button faces are typeset
+around $v^*$ via `dropBall` (the panel's particle count / fill volume, stacks up to
+`kMaxBalls`); then $W^u$ then $W^s$, each header with a `ball` button and its own
+radius slider (`S.ballRadius`, up to `domain radius`; until moved it follows
+`eqBallRadius`) — `dropManifoldBall`: `ballCount` seeds `manifoldPoint(theta)` on $W$
+within that radius, evenly on the segment, a sunflower on the disk, in the side's
+color. Inside the trusted $r$ a seed is $v^* + K(\theta)$; past it, where $K$ alone
+is off $W$, $\theta$'s parameter is pulled back into the trusted disk by
+$e^{-\Lambda t}$ ($t$ from the slowest rate) and carried out by the true flow for $t$
+(forward on $W^u$, backward on $W^s$), by the conjugacy
+$\varphi^t(v^* + K(s)) = v^* + K(e^{\Lambda t}s)$ — off-$W$ error shrinks on the way, so
+the ball reaches outside $W_{loc}$ and stays on $W$. Their heads glow (`Curve::onManifold`: an additive halo pass,
+`u_round` = 2, strength `manifold ball glow`). Button faces are typeset
 with [[LatexImage]] (`latexButton`: an `ImageButton` of the cached texture, a plain
 text button if the typesetting fails), `tex()` caches every label by string, size
 and color. Per side: `Grow W_loc` → (grown) `r = ` trusted radius, then for a curve
@@ -170,7 +178,7 @@ near plane is left at the shared [[Camera]]'s default.
 - Measured trusted radii at the classic parameters (order 12, defect $< 10^{-3}$):
   $W^u(O)$ and $W^s(C_\pm)$ reach the search cap 25; $W^s(O)$ 12.16; $W^u(C_\pm)$ 2.50
   (the near-Hopf complex pair, as in [[lorenz-equilibrium]]'s check). Both sides of one
-  $x^*$ are drawn at the **smaller** of the two (`rebuildManifolds`), so the curve never
+  $v^*$ are drawn at the **smaller** of the two (`rebuildManifolds`), so the curve never
   reaches past the surface: $O$ at 12.16, $C_\pm$ at 2.50 — and a curve's branches
   start from those ends.
 

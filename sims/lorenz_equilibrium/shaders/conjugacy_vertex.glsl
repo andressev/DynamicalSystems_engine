@@ -1,6 +1,6 @@
 #version 330 core
 
-// The deformed ball V = x* + h~^{-1}(B_rho(0)) of stage C: the unit sphere pushed
+// The deformed ball V = v* + h~^{-1}(B_rho(0)) of stage C: the unit sphere pushed
 // through engine::ConjugacyMap on the GPU (h~^{-1} = K_s + K_u, exact on E^s and E^u,
 // an interpolation between). Shaded by glass_fragment.glsl. The line below is replaced
 // by ConjugacyMap::glsl() when the sim loads this file.
@@ -10,7 +10,7 @@ layout(location = 0) in vec3 aPos;   // unit sphere
 
 uniform mat4 view;
 uniform mat4 projection;
-uniform vec3 u_center;     // x*
+uniform vec3 u_center;     // v*
 uniform float u_radius;    // rho of the linear ball
 uniform int u_morphOn;     // 1: the "Transform flow" ghost, between U's sphere and V
 uniform float u_morph;     // 0 = U's round sphere, 1 = V

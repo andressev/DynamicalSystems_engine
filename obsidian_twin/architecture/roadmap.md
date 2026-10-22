@@ -23,11 +23,11 @@
   [[LorenzSystem]] module. M3 done: click on a bead → zoom → handoff to the new
   [[lorenz-equilibrium]] (glass ball $V$, everything clipped to it) and back, via
   `App::requestSwitch` ([[0009-sim-handoff-requestswitch]]). M4 done: stage A in
-  [[lorenz-equilibrium]] ($E^s$/$E^u$ through $x^*$, $f$ vs $A(x-x^*)$ arrows, HUD,
+  [[lorenz-equilibrium]] ($E^s$/$E^u$ through $v^*$, $f$ vs $A(v-v^*)$ arrows, HUD,
   hyperbolicity warning); singles can run on [[TaylorIntegrator]]. M5 done: stage B
   (ring in $E^s$: $\psi^t$, $\varphi^t$ from $E^s$, $\varphi^t$ from $W^s$ via $K_s$,
   links + formula check). M6 done: stage C (section Hartman–Grobman: $U$ and
-  $V = x^* + \tilde h^{-1}(U)$ via [[ConjugacyMap]], paired orbits that dissolve together,
+  $V = v^* + \tilde h^{-1}(U)$ via [[ConjugacyMap]], paired orbits that dissolve together,
   and a radius check — invariance defect + folding — with the safe radius; crashes with
   shockwaves via [[FrameCopy]]; "Transform flow" carries the linear picture onto $V$ on
   the GPU). Tried and dropped: a full conjugacy $H$ by a cross-section — not continuous
@@ -36,7 +36,7 @@
   Transform flow toggles U ↔ V (always 400 seeds), **T** sends a ghost of the pairs'
   $\psi^t$ across (orange → green), section **Linear ball U** ($E^s$/$E^u$ in $U$,
   disks of pairs on them, Transform subspaces onto $K(E^s)$/$K(E^u)$ with glowing
-  tangent miniatures $T_{x^*}W^s(x^*)$), $W^s$/$W^u$ in $V$, Camera on U / V,
+  tangent miniatures $T_{v^*}W^s(v^*)$), $W^s$/$W^u$ in $V$, Camera on U / V,
   $\bar 0$ at $U$'s centre; App: panel auto-pull at the top-left corner, F11 borderless
   full screen ([[Window]]). Refraction through the glass stays open.
 - **M3 landed (2026-09-24)**: [[VectorField]] + [[Integrator]] + [[Trajectory]] modules
@@ -50,13 +50,13 @@
 - [[diagonal-linear]] (wip): minimal R3 sibling of [[vector-field]] for diagonal linear
   systems — $E^s$/$E^u$ drawn in, balls of trajectories; next step is general $A$.
 - LaTeX labels: [[LatexImage]] (MicroTeX layout, CPU raster → texture) is live —
-  [[diagonal-linear]] shows $\dot{x} = Ax$ with the live $A$ top-right
-  ([[0007-latex-labels-microtex-imgui]]). Next: $\varphi^t(x_0)$ riding a trajectory
-  head (needs a cheap per-frame path), $\dot{x} = f(x)$ from [[Expression]].
+  [[diagonal-linear]] shows $\dot{v} = Av$ with the live $A$ top-right
+  ([[0007-latex-labels-microtex-imgui]]). Next: $\varphi^t(v_0)$ riding a trajectory
+  head (needs a cheap per-frame path), $\dot{v} = f(v)$ from [[Expression]].
 - [[vector-field]] rebuilt (2026-10-11) in [[diagonal-linear]]'s style: typed field
-  typeset via the new `Expression::latex`, $\phi^t(x_0)$ labels, ball/disk + singles,
+  typeset via the new `Expression::latex`, $\phi^t(v_0)$ labels, ball/disk + singles,
   R2/R3 each with its own saved settings; R3 follow-a-single camera and red
-  $\dot{x}$ tangent arrows on singles. Dropped: chase-cam ride, glyph distance fade.
+  $\dot{v}$ tangent arrows on singles. Dropped: chase-cam ride, glyph distance fade.
 - Next: marching-cubes mesh sim (M1 of the level-set proposal), then CUDA (M4) — where
   glyph sampling and many-seed advection are the first kernels; symbolic ∇f in
   [[Expression]] stays the highest-leverage enabler.
@@ -116,17 +116,17 @@ hot-recompiled via `Shader::fromSources`. Live function box in [[riemann-sphere]
 ## Hartman–Grobman on Lorenz (in progress, 2026-10)
 Two sims, kept separate so neither carries the other's UI: `lorenz_flow` (global field,
 red equilibria, hover glow, click → eased zoom) hands off to `lorenz_equilibrium`
-(ball $V = B_r(x^*)$, stages A/B/C) through a new deferred `App::requestSwitch` + a
+(ball $V = B_r(v^*)$, stages A/B/C) through a new deferred `App::requestSwitch` + a
 key→double handoff map; the shared [[Camera]] makes the switch seamless (needs an ADR).
 Conjugacy only on the invariant manifolds, via the parametrization method
 ([[lorenz-stable-manifold]]) generalized to any equilibrium and complex pairs; $V$ is the
-sphere pushed through $x^* + K_s(\theta_s) + K_u(\theta_u)$ — exact on $E^s$/$E^u$,
+sphere pushed through $v^* + K_s(\theta_s) + K_u(\theta_u)$ — exact on $E^s$/$E^u$,
 an interpolation elsewhere. Manifold surfaces themselves are *not* drawn yet (later).
 Orbits leaving $U$/$V$ dissolve on the rim, both at the same instant.
 - M0 `ArrowGlyphs` module (done) · M1 `Eigen3` + `InvariantManifold` (done; std-only, checked
   against [[lorenz-manifold]]'s origin coefficients + an invariance-error test) ·
   M2 [[lorenz-flow]] + [[LorenzSystem]] (done) · M3 handoff + zoom + glass ball/clip (done) · M4 (done) stage A ($E^s$/$E^u$,
-  $f$ vs $A(x-x^*)$, HUD, non-hyperbolic warning) · M5 (done) stage B ($\varphi^t$ vs
+  $f$ vs $A(v-v^*)$, HUD, non-hyperbolic warning) · M5 (done) stage B ($\varphi^t$ vs
   $\psi^t$ from $E^s$) · M6 (done) stage C (U and deformed V, $h^{-1}$ links, dissolve) ·
   M7 refraction (`RenderTarget`), polish, notes. · Next track: [[lorenz-manifold-growth]]
   (grow $W_{loc}$ → $W$ per equilibrium; surfaces by geodesic level sets later).

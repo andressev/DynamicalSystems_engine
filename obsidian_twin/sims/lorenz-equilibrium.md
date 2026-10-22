@@ -15,22 +15,22 @@ code:
 
 `sims/lorenz_equilibrium/` — lib `sim_lorenz_equilibrium`, standalone exe `lorenz_equilibrium_standalone`.
 
-The local picture at one Lorenz equilibrium $x^*$: field and trajectories inside a glass
-ball $V = B_r(x^*)$, everything clipped to it. Mode 2 of the Hartman–Grobman track.
+The local picture at one Lorenz equilibrium $v^*$: field and trajectories inside a glass
+ball $V = B_r(v^*)$, everything clipped to it. Mode 2 of the Hartman–Grobman track.
 
 ## What is being simulated
 The Lorenz flow ([[lorenz-flow]] has the equations) seen only inside $V$. This is where
-Hartman–Grobman lives: near a hyperbolic $x^*$ the flow is conjugate to its linearization.
+Hartman–Grobman lives: near a hyperbolic $v^*$ the flow is conjugate to its linearization.
 It shows the flow in $V$ — at $C_\pm$ a dropped ball of seeds flattens onto the
 unstable plane within a fraction of a second ($\lambda_s \approx -13.85$) and then
 spirals slowly outward ($0.094 \pm 10.19i$) — next to its linearization (**stage A**,
-M4): $E^s$ and $E^u$ through $x^*$ and the field $f$ against $A(x - x^*)$ with
-$A = Df(x^*)$. **Stage B** (M5) compares the flows on the stable side:
-$\psi^t(x) = x^* + e^{At}(x - x^*)$ keeps $E^s$ flat, the true $\varphi^t$ does not —
-only the curved $W^s = x^* + K_s(\theta)$ is invariant, with
-$\varphi^t(x^* + K_s(s)) = x^* + K_s(e^{\Lambda t}s)$. **Stage C** (M6, section
-Hartman–Grobman) shows the whole conjugacy: the linear ball $U = B_\rho(x^*)$ next to
-its image $V = x^* + \tilde h(U)$, $\tilde h = K_s + K_u$ — exact on $E^s$/$E^u$,
+M4): $E^s$ and $E^u$ through $v^*$ and the field $f$ against $A(v - v^*)$ with
+$A = Df(v^*)$. **Stage B** (M5) compares the flows on the stable side:
+$\psi^t(v) = v^* + e^{At}(v - v^*)$ keeps $E^s$ flat, the true $\varphi^t$ does not —
+only the curved $W^s = v^* + K_s(\theta)$ is invariant, with
+$\varphi^t(v^* + K_s(s)) = v^* + K_s(e^{\Lambda t}s)$. **Stage C** (M6, section
+Hartman–Grobman) shows the whole conjugacy: the linear ball $U = B_\rho(v^*)$ next to
+its image $V = v^* + \tilde h(U)$, $\tilde h = K_s + K_u$ — exact on $E^s$/$E^u$,
 an interpolation between — with paired orbits and a check of whether $\rho$ is small
 enough for the homeomorphism.
 
@@ -42,24 +42,24 @@ zoom lands, calls `App::requestSwitch("lorenz_equilibrium", handoff)`
 `globalCx/Cy/Cz/R` — lorenz_flow's view to return to, kept untouched and handed back.
 `init` takes them, leaves the camera where the zoom put it, and fades the glass, arrows
 and trails in over 0.6 s; the bead arrives at lorenz_flow's focused size (`beadRadius`)
-and eases down to this sim's much smaller `bead size` (0.06 — here $x^*$ is a point the
+and eases down to this sim's much smaller `bead size` (0.06 — here $v^*$ is a point the
 flow is seen around, not a marker). Leaving hands the current size back, and lorenz_flow
-grows it from there. From the menu (no handoff) it frames $x^*$ at $3r$ from its saved settings.
+grows it from there. From the menu (no handoff) it frames $v^*$ at $3r$ from its saved settings.
 
 **Leaving.** `Back to global view` / **Backspace** fades the content out (0.35 s), then
-hands back `sigma/rho/beta/eq` + the return view; lorenz_flow comes up on $x^*$ and eases
+hands back `sigma/rho/beta/eq` + the return view; lorenz_flow comes up on $v^*$ and eases
 out. Only offered when `lorenz_flow` is registered (not in the standalone).
 
 **Frame.** `update`: advance every [[Trajectory]] via [[TrajectoryRunner]], click drops a
-single on the camera-facing plane through $x^*$ (only inside $V$), keep the orbit centred
-on $x^*$ (it moves with $\rho$). `render`: bead, then arrows and trails with the glyph
+single on the camera-facing plane through $v^*$ (only inside $V$), keep the orbit centred
+on $v^*$ (it moves with $\rho$). `render`: bead, then arrows and trails with the glyph
 pair **clipped to $V$** (`u_clipCenter`/`u_clipRadius`: fragments outside discarded, a
 soft 4% rim), the halo, then the glass last — blended, no depth writes, Fresnel-weighted
 (clear face-on, bright at the silhouette, sharp highlight, back faces at half).
 Arrows: a lattice through the cube around $V$, points outside the ball dropped, sampled
 in parallel.
 
-**Stage A — the linearization.** `applyParams` takes $A = Df(x^*)$ ([[LorenzSystem]])
+**Stage A — the linearization.** `applyParams` takes $A = Df(v^*)$ ([[LorenzSystem]])
 and its [[Eigen3]] decomposition.
 - `rebuildSubspaces()`: orthonormal bases of $E^s$/$E^u$ (Gram–Schmidt over
   `realBasis`, $\{\mathrm{Re}\,v, \mathrm{Im}\,v\}$ for the complex pair) cut to $V$ —
@@ -67,9 +67,9 @@ and its [[Eigen3]] decomposition.
   a plane is a translucent disk + rim with two rings of $Au$ arrows (they lie in the
   disk, $A$ maps $E$ to itself, so the rotation of a complex pair shows). Blue $E^s$,
   red $E^u$ (as [[diagonal-linear]]), labelled. Sink/source ($E = \mathbb{R}^3$): none.
-- `arrows` mode: $f$, $A(x - x^*)$, both ($Au$ flat white over the colored $f$, one
-  shared scale — equal near $x^*$, parting toward the glass), or the remainder
-  $f - A(x-x^*) = Q(u,u)$ on its own scale.
+- `arrows` mode: $f$, $A(v - v^*)$, both ($Au$ flat white over the colored $f$, one
+  shared scale — equal near $v^*$, parting toward the glass), or the remainder
+  $f - A(v-v^*) = Q(u,u)$ on its own scale.
 - HUD (under the system, top-right): $A$ with numbers, the eigenvalues (a pair as
   $a \pm bi$), $\dim E^s$/$\dim E^u$. Hyperbolicity: red when $\min|\mathrm{Re}\,\lambda| < 10^{-3}$
   (Hartman–Grobman does not apply), orange below 0.2 — $C_\pm$ at $\rho = 28$ sit at
@@ -79,17 +79,17 @@ and its [[Eigen3]] decomposition.
 builds $K_s$ with [[InvariantManifold]] (stable side, `K_s order`, default 12).
 `seedRing()`: seeds $\theta$ on a circle of `ring radius`$\cdot r$ in $E^s$ (the two
 points $\pm\theta$ when $E^s$ is a line, as at $C_\pm$), each starting three curves at
-the same field time — $\psi^t$ from $x^* + \theta$ on the linear field (orange),
+the same field time — $\psi^t$ from $v^* + \theta$ on the linear field (orange),
 $\varphi^t$ from the same point (green: leaves $E^s$), $\varphi^t$ from
-$x^* + K_s(s)$, $s$ = `toParam`$(\theta)$ (blue: stays on $W^s$). All three run on the
+$v^* + K_s(s)$, $s$ = `toParam`$(\theta)$ (blue: stays on $W^s$). All three run on the
 singles' method; for Taylor, $\psi^t$ uses an exact linear jet
-($c_1 = A(x - x^*)$, $c_{k+1} = A c_k/(k+1)$). `rebuildStageMesh()` each frame: link
+($c_1 = A(v - v^*)$, $c_{k+1} = A c_k/(k+1)$). `rebuildStageMesh()` each frame: link
 lines $\psi^t \leftrightarrow \varphi^t$ from the same seed (orange to green, same $t$ —
 how far the true flow has left the linear one), and the formula points
-$x^* + K_s(e^{\Lambda t}s)$ (`check`, yellow, drawn over the blue heads with no depth
+$v^* + K_s(e^{\Lambda t}s)$ (`check`, yellow, drawn over the blue heads with no depth
 test). Measured at $r = 3$, ring $0.6r$, $t = 0.3$:
 blue head vs formula $7\cdot10^{-14}$ at $O$, $4\cdot10^{-14}$ at $C_+$; green vs blue
-0.57 at $O$, 0.056 at $C_+$. `labels`: $\phi^t(x_0)$ over the green head and $\psi^t(x_0)$ under the orange one — the true and the linear flow from the same seed $x_0$, the pair the link joins ($\theta_0$ is stage C's, where $U$ lives in $\theta$) — on every seed; size in Other settings → LaTeX. The ring is cleared by a new $x^*$/parameters, `Clear all`;
+0.57 at $O$, 0.056 at $C_+$. `labels`: $\phi^t(v_0)$ over the green head and $\psi^t(v_0)$ under the orange one — the true and the linear flow from the same seed $v_0$, the pair the link joins ($\theta_0$ is stage C's, where $U$ lives in $\theta$) — on every seed; size in Other settings → LaTeX. The ring is cleared by a new $v^*$/parameters, `Clear all`;
 `Restart` resets it.
 
 **Stage C — Hartman–Grobman.** `buildConjugacy()` (from `buildManifold`) builds $K_s$,
@@ -100,37 +100,37 @@ not hyperbolic / no saddle → the section says why and offers nothing.
   panel — `App::setControlsVisible(false)`, **H** brings it back): first everything but $V$ fades
   to black (`contentFade` $\times (1 - $`hgFocus`$)$) and the camera frames $V$ — the
   sphere through `hInv` in `shaders/conjugacy_vertex.glsl`, green glass (red when the
-  check fails), holding the true field sampled at $x^* + \tilde h(\theta)$ on a
-  lattice $\theta \in B_\rho$ and $\varphi^t$ (green) from $x^* + \tilde h(\theta)$
+  check fails), holding the true field sampled at $v^* + \tilde h(\theta)$ on a
+  lattice $\theta \in B_\rho$ and $\varphi^t$ (green) from $v^* + \tilde h(\theta)$
   for pair seeds on the sphere $0.6\rho$ — and a **click** on either ball seeds one
   more pair where you clicked (`dropHgPairUnderCursor`: the point on the camera-facing
   plane through that ball's centre; in $U$ it is $\theta$, in $V$ it is
-  $x^* + \tilde h(\theta)$ so $\theta$ comes from `hgForward`), the partner
+  $v^* + \tilde h(\theta)$ so $\theta$ comes from `hgForward`), the partner
   appearing in the other ball; while the conjugacy is up the Linearization and Stable
   side panels are hidden and the stage A/B scene (singles, ring, $E^s$/$E^u$) is not
   drawn once $V$ has the focus; then the camera eases out (log-interpolated
   distance, centre to the midpoint) and $U$ fades in beside it — round orange glass at
   `hgOffset()` = screen-right at the press $\times\,\rho(2 + $`distance`$)$, holding
-  $A\theta$ and $\psi^t$ (orange). $U$'s content is integrated around $x^*$ and drawn
+  $A\theta$ and $\psi^t$ (orange). $U$'s content is integrated around $v^*$ and drawn
   shifted by the vertex shader's `u_offset`, clipped to $U$'s sphere. `links` join each
   $\psi^t$ head (in $U$) to its $\varphi^t$ partner (in $V$) across the gap;
-  **$V$'s main particle is $x^* + \tilde h(\psi^t - x^*)$** (green, labelled
+  **$V$'s main particle is $v^* + \tilde h(\psi^t - v^*)$** (green, labelled
   $\tilde h(\psi^t(\theta_0))$, trail and head — $\psi^t$'s own trail drawn a second time
   through the Transform flow's `morph_vertex.glsl` at morph 1 with no shift, so the map
   runs per vertex on the GPU): the linear orbit carried over by the map, so the pair is
   conjugate by construction and the links end on it; `phi^t (true flow)` adds the true
-  orbit $\varphi^t$ from $x^* + \tilde h(\theta_0)$ in yellow — on the green one on the
+  orbit $\varphi^t$ from $v^* + \tilde h(\theta_0)$ in yellow — on the green one on the
   manifolds only, the gap elsewhere being the interpolation error (changed 2026-10-18;
   before, the true orbit was the main one and the mapped point a yellow check).
   **Notation**: since 2026-10-18 the map $K_s + K_u$ is written $\tilde h : U \to V$ in
   every label and panel (the Newton inverse is $\tilde h^{-1}$); the code and
-  [[ConjugacyMap]] still call it `hInv`. Above each ball its name and, between the name and the glass, the system it holds: $U$ over $\dot\theta = Df(x^*)\,\theta$, $V = \tilde h(U)$ over $\dot x = f(x)$. Drawn under the panels like
+  [[ConjugacyMap]] still call it `hInv`. Above each ball its name and, between the name and the glass, the system it holds: $U$ over $\dot\theta = Df(v^*)\,\theta$, $V = \tilde h(U)$ over $\dot v = f(v)$. Drawn under the panels like
    every other label (`LatexImage::drawAt` on the background list); the camera frames the pair a little low to
   leave room for them, and the HUD's linearization block hides while $U$ is shown (its
-  label already says $\dot\theta = Df(x^*)\,\theta$).
+  label already says $\dot\theta = Df(v^*)\,\theta$).
 - **Dissolve — the crash**: each particle crashes on its own ball's real border —
-  $\psi^t$ when $|\psi^t - x^*| = \rho$, $\varphi^t$ when $|\tilde h^{-1}(\varphi^t - x^*)| = \rho$,
-  i.e. on the deformed surface $x^* + \tilde h(\rho S^2)$, with $\tilde h^{-1}$ by Newton
+  $\psi^t$ when $|\psi^t - v^*| = \rho$, $\varphi^t$ when $|\tilde h^{-1}(\varphi^t - v^*)| = \rho$,
+  i.e. on the deformed surface $v^* + \tilde h(\rho S^2)$, with $\tilde h^{-1}$ by Newton
   on `hInv` warm-started from the last frame (`hgForward`; residual $\sim10^{-15}$, crash
   within one frame step of the surface). For the true conjugacy the two crashes would be
   simultaneous; with the interpolated $\tilde h$ they drift apart off the manifolds —
@@ -155,7 +155,7 @@ not hyperbolic / no saddle → the section says why and offers nothing.
   (orange) until the first one hits $U$'s border (`max flow time`, ODE, is only a
   fallback for a flow too slow to get there), pause
   0.7 s, then the whole picture is carried to $V$ over `transform time`: every trail point
-  and head goes through `shaders/morph_vertex.glsl` — $\theta \mapsto x^* +
+  and head goes through `shaders/morph_vertex.glsl` — $\theta \mapsto v^* +
   \text{shift}\,(1-s) + \mathrm{mix}(\theta, \tilde h(\theta), s)$, $s$ eased $0\to1$,
   color orange $\to$ green — so all vertices move in parallel on the GPU (the same
   [[ConjugacyMap]] GLSL as $V$); a ghost of $U$'s glass travels along, deforming from the
@@ -178,26 +178,26 @@ not hyperbolic / no saddle → the section says why and offers nothing.
   builder as $V$'s, `buildSubspaces(r, mesh, draws, arrows, anchors)`, into a second
   mesh drawn with $U$'s offset (`rebuildHgSubspaces`, with `rebuildHgArrows`;
   `renderHgSubspaces`; labels in `drawSubspaceLabels`). **Segment / Disk / Ball on
-  E^s / E^u** seeds pairs right on the subspace, `disk radius` $\cdot\rho$ around $x^*$,
+  E^s / E^u** seeds pairs right on the subspace, `disk radius` $\cdot\rho$ around $v^*$,
   `disk seeds` of them (evenly on a line, a sunflower on a plane), added to the pairs on
-  stage (`seedHgDisk`). Since $\theta \in E^s$ gives $x^* + \tilde h(\theta) \in W^s$,
+  stage (`seedHgDisk`). Since $\theta \in E^s$ gives $v^* + \tilde h(\theta) \in W^s$,
   $\psi^t$ stays in the flat disk while $\varphi^t$ stays on the curved manifold.
   **Transform subspaces** carries a tessellated copy of $E^s$, $E^u$ (rings $\times$
-  segments, `buildSubspaceGrid`) from $U$ onto $x^* + K_s(E^s)$, $x^* + K_u(E^u)$ in $V$
+  segments, `buildSubspaceGrid`) from $U$ onto $v^* + K_s(E^s)$, $v^* + K_u(E^u)$ in $V$
   through `morph_vertex.glsl` — on $E^s$, $\tilde h = K_s$ — over `transform time`, and
   leaves it there (press again to bring it back; Show resets it). **tangent
-  miniatures**: flat $E^s$, $E^u$ of radius $0.3\rho$ at $x^*$ in $V$, the planes the
-  bent copies are tangent to, labelled $T_{x^*}W^s(x^*)$ (cyan) and $T_{x^*}W^u(x^*)$
+  miniatures**: flat $E^s$, $E^u$ of radius $0.3\rho$ at $v^*$ in $V$, the planes the
+  bent copies are tangent to, labelled $T_{v^*}W^s(v^*)$ (cyan) and $T_{v^*}W^u(v^*)$
   (orange) — shown whenever the checkbox is on, transformed subspaces or not, with a
   breathing additive halo so they read against the bent surfaces (`hgGridMesh`,
   `hgMiniMesh`, `renderHgSubspaceCopy`, `renderHgMini`, `drawMiniLabels`).
-- **W^s, W^u** (Ball V, stages A/B only): $x^* + \tilde h(E^s \cap B_r)$
-  and $x^* + \tilde h(E^u \cap B_r)$ on the CPU (`buildSubspaceGrid` with `hm.hInv`,
+- **W^s, W^u** (Ball V, stages A/B only): $v^* + \tilde h(E^s \cap B_r)$
+  and $v^* + \tilde h(E^u \cap B_r)$ on the CPU (`buildSubspaceGrid` with `hm.hInv`,
   rings cut where the image passes $1.6 r$), clipped to the glass, labels $W^s$/$W^u$
   (`manifoldMesh`, `renderManifoldsV`, `drawManifoldLabels`); rebuilt with the
   subspaces (radius, parameters, `K_s order`).
 - $U$'s center carries a $\bar{0}$ label (the origin of the linear coordinates), as
-  $x^*$'s label in $V$: same size (`equilibrium label`) and color, fading with $U$
+  $v^*$'s label in $V$: same size (`equilibrium label`) and color, fading with $U$
   (`drawEquilibriumLabel`).
 - **Camera on U / Camera on V** (bottom of Linear ball U / Ball V, which sits right
   below it in the panel; Trajectories in V leaves the panel while the conjugacy is up):
@@ -210,16 +210,16 @@ not hyperbolic / no saddle → the section says why and offers nothing.
   pressed at). Under the conjugacy, tapping **1** cycles default → on $U$ → on $V$ →
   default (the same three views, picked from `camAimTo`). Ball V's `radius r`, `glass` and `W^s, W^u` leave the panel while the
   conjugacy is up (V is $\tilde h(U)$ there); the two H-G glasses draw at 0.72 / 0.88.
-- **Labels** (`labels`): $\phi^t(x_0)$ over every green head in $V$, $\psi^t(\theta_0)$
+- **Labels** (`labels`): $\phi^t(v_0)$ over every green head in $V$, $\psi^t(\theta_0)$
   over every orange head in $U$, and a small $\tilde h$ (as in $V$'s label) at the middle of every link (the link itself a gradient from $\psi^t$'s orange to $\varphi^t$'s green — `fragment.glsl`'s `u_useRamp` 2) —
   the link is the map from the linear orbit's point to its partner (`drawHgPairLabels`).
 - **The check** (`runHgCheck`, on release of the slider and on any parameter change):
   `hgDefect(ρ)` — the largest relative invariance defect of $K_s$ and $K_u$ over the
   sphere $|\theta| = \rho$, each $\theta$ split into its $E^s$/$E^u$ parts; `hgMinDet(ρ)`
   — the smallest $\det D\tilde h$ on a lattice in $U$ (central differences; 1 at
-  $x^*$, $\le 0.05$ = folding over, no longer one-to-one). Green "ok" below $10^{-3}$,
+  $v^*$, $\le 0.05$ = folding over, no longer one-to-one). Green "ok" below $10^{-3}$,
   orange "approximate" below $5\cdot10^{-2}$, red "too big" above or when it folds; plus
-  the **safe radius** (bisection up to 25), which is also the `linear ball radius` slider's maximum — computed first, so the radius is pulled down to it when $x^*$ or the parameters change. Measured: at $O$ defect $3\cdot10^{-11}$ at
+  the **safe radius** (bisection up to 25), which is also the `linear ball radius` slider's maximum — computed first, so the radius is pulled down to it when $v^*$ or the parameters change. Measured: at $O$ defect $3\cdot10^{-11}$ at
   $\rho = 3$ and safe beyond 6; at $C_+$ $10^{-8}$ at 1, $6\cdot10^{-5}$ at 2, $10^{-2}$ at 3,
   safe up to $\approx 2.49$ (the near-Hopf $K_u$). $\det$ stays $> 0.7$ there — the
   defect, not folding, is what limits $\rho$ for Lorenz.
@@ -232,15 +232,15 @@ not hyperbolic / no saddle → the section says why and offers nothing.
 - [[TaylorIntegrator]] — singles on the Taylor method (default: order 20, tolerance
   $10^{-14}$), the cloud on RK4; `Integrator` section: one method combo for each, order
   + tolerance shown when Taylor is picked, `max step h` = trail spacing for Taylor.
-- [[LorenzSystem]] — the field, the equilibria, which $x^*$.
+- [[LorenzSystem]] — the field, the equilibria, which $v^*$.
 - [[Integrator]] / [[Trajectory]] — RK4 seeds and singles.
 - [[TrajectoryRunner]] — parallel integrate + upload; Performance readout.
 - [[FlowKeys]] — arrow-key speed and direction.
 - [[ArrowGlyphs]] — the instanced field inside $V$.
 - [[Shader]] — glyph pair (+ clip), bead pair, glass (bead vertex + `glass_fragment`).
 - [[Mesh]] / [[Shapes]] — unit sphere for bead, halo and glass.
-- [[LatexImage]] — the system top-right, the $x^*$ label.
-- [[Camera]] — orbit around $x^*$; kept as handed over.
+- [[LatexImage]] — the system top-right, the $v^*$ label.
+- [[Camera]] — orbit around $v^*$; kept as handed over.
 
 ## The math
 - Linearization, conjugacy, why hyperbolicity matters: [[integral-curves]];
@@ -250,10 +250,10 @@ not hyperbolic / no saddle → the section says why and offers nothing.
 **Other settings → LaTeX**: `equation`, `HUD` (the typeset matrix/eigenvalues; its plain-text lines scale along), `equilibrium label`, `E^s, E^u labels` sizes in px, saved.
 Red `sectionHeader()` titles: **Equilibrium** (O / C+ / C− radio — switching clears the
 trajectories; `Back to global view`), **Lorenz system** ($\sigma,\rho,\beta$, Classic,
-`show x' = f(x)`), **Linearization** (`E^s, E^u` + plane opacity, `HUD`, `arrows`:
-f / A(x - x*) / both / f - A(x - x*)), **Stable side: phi^t vs psi^t** (`ring radius`,
+`show v' = f(v)`), **Linearization** (`E^s, E^u` + plane opacity, `HUD`, `arrows`:
+f / A(v - v*) / both / f - A(v - v*)), **Stable side: phi^t vs psi^t** (`ring radius`,
 `ring seeds` when $E^s$ is a plane, Seed / Clear ring, colored toggles for the three
-curves, `labels`, `links`, `check x* + K(e^{Lt} s)`), **Hartman-Grobman** (`linear ball radius`,
+curves, `labels`, `links`, `check v* + K(e^{Lt} s)`), **Hartman-Grobman** (`linear ball radius`,
 the check line + safe radius, Show / Hide conjugacy, `distance` between the balls,
 Reseed, Transform flow + `transform time` / `max flow time`, `pairs`, `labels`,
 `links (h^-1)`, `h^-1(psi^t)`), **Linear ball U** (conjugacy up only: `E^s, E^u`,

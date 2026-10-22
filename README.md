@@ -114,8 +114,8 @@ surface `f(x,y,z) = c` carves out of space — raymarched per pixel with no mesh
 
 ![Vector field sim](docs/screenshots/vector_field.png)
 
-Type a field `f(x)` and see it as arrow glyphs colored by magnitude, with
-`ẋ = f(x)` typeset from exactly what you typed:
+Type a field `f(v)` and see it as arrow glyphs colored by magnitude, with
+`v̇ = f(v)` typeset from exactly what you typed:
 
 - Drop a ball (a disk in R²) of initial conditions and watch it deform under the flow,
   or click to drop single trajectories, each labelled `φᵗ(x₀)`.
@@ -129,7 +129,7 @@ Type a field `f(x)` and see it as arrow glyphs colored by magnitude, with
 
 ![Diagonal linear sim](docs/screenshots/diagonal_linear.png)
 
-`ẋ = diag(λ₁, λ₂, λ₃) x` with its stable (blue) and unstable (red) eigenspaces drawn in.
+`v̇ = diag(λ₁, λ₂, λ₃) v` with its stable (blue) and unstable (red) eigenspaces drawn in.
 Balls of initial conditions show what the flow does to volumes: they stretch along
 `Eᵘ`, collapse onto it as the `Eˢ` components decay, and their volume scales by
 `e^{(λ₁+λ₂+λ₃)t}`.
@@ -147,12 +147,12 @@ its equilibria `O`, `C₊`, `C₋` as red beads. Hovering a bead shows its linea
 
 ![Lorenz equilibrium sim](docs/screenshots/lorenz_equilibrium.png)
 
-The flow near one equilibrium `x*`, inside a glass ball `V` with everything clipped to
+The flow near one equilibrium `v*`, inside a glass ball `V` with everything clipped to
 it — where Hartman–Grobman says the flow looks like its linearization:
 
-- Stage A: `Eˢ`, `Eᵘ` through `x*`, and the field `f` against `A(x − x*)`.
+- Stage A: `Eˢ`, `Eᵘ` through `v*`, and the field `f` against `A(v − v*)`.
 - Stage B: the linear flow keeps `Eˢ` flat, the true flow doesn't — only the curved
-  stable manifold `Wˢ = x* + Kₛ(θ)` (parametrization method) is invariant.
+  stable manifold `Wˢ = v* + Kₛ(θ)` (parametrization method) is invariant.
 - Stage C: the conjugacy itself — a linear ball `U` next to its image `V`, paired orbits,
   and a check of how large the ball may be.
 - Backspace flies back out to `lorenz_flow`.
@@ -164,7 +164,7 @@ it — where Hartman–Grobman says the flow looks like its linearization:
 The global Lorenz flow again, but hovering a bead opens a small popup to grow its
 manifolds:
 
-- **Grow `W_loc`** grows the local stable or unstable manifold out of `x*` — the Taylor
+- **Grow `W_loc`** grows the local stable or unstable manifold out of `v*` — the Taylor
   patch of the parametrization method, drawn out to the radius where it is still
   accurate (both sides of one equilibrium share it).
 - **Grow `W`** carries a one-dimensional manifold on globally: the two ends of the local

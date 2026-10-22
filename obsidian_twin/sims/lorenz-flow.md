@@ -19,11 +19,11 @@ red beads you can hover and click to fly onto. Mode 1 of the Hartman–Grobman t
 $\dot x = \sigma(y-x)$, $\dot y = x(\rho-z) - y$, $\dot z = xy - \beta z$ with live
 $\sigma, \rho, \beta$. Its equilibria are the origin $O$ and, for $\rho > 1$,
 $C_\pm = (\pm\sqrt{\beta(\rho-1)}, \pm\sqrt{\beta(\rho-1)}, \rho - 1)$. Each is a red bead;
-hovering shows its linearization $Df(x^*)$ — eigenvalues and type (at the classic
+hovering shows its linearization $Df(v^*)$ — eigenvalues and type (at the classic
 parameters $O$ is a saddle with $\dim E^s = 2$, $C_\pm$ are saddle-foci with a complex
 unstable pair $\approx 0.094 \pm 10.19i$). Clicking eases the camera onto it and, when
 the zoom lands, hands off to [[lorenz-equilibrium]]. The local
-picture inside a ball $V$ around $x^*$ — what Hartman–Grobman says there — is the
+picture inside a ball $V$ around $v^*$ — what Hartman–Grobman says there — is the
 separate [[lorenz-equilibrium]] sim; this sim stays global so neither carries the
 other's UI.
 
@@ -32,7 +32,7 @@ other's UI.
 focused bead fades out (`currentSceneFade()`: arrows, trails, heads, the other beads and
 labels), and when the zoom lands `handOff()` requests the switch with `sigma/rho/beta`,
 `eq`, `beadRadius` and the global view `globalCx/Cy/Cz/R`. Coming back, `init` finds
-`eq` in the handoff: same parameters, camera left on $x^*$, the bead already shrunk and
+`eq` in the handoff: same parameters, camera left on $v^*$, the bead already shrunk and
 lit, then `backToGlobal()` eases out to the handed-back view while the scene fades in
 (`returning`). Trajectories don't survive the round trip. The standalone has no
 `lorenz_equilibrium`, so there the zoom lands and stays (Back / Ball here as before).
@@ -52,7 +52,7 @@ or drop a single (empty space). `updateCamera()` runs the **eased zoom**: centre
 and radius interpolated in log space under a quintic smoothstep over `zoom duration`;
 the global view is remembered on the way in and `Back to global view` (or **Backspace**
 — Escape belongs to [[App]]) flies back to it. The focused bead shrinks (to 0.4 of `bead size`, eased), keeps glowing and drops out of picking — it no longer reacts to the mouse. While focused the orbit centre stays on
-$x^*$ even as $\rho$ is dragged. Since [[Camera]]'s orbit position is computed in
+$v^*$ even as $\rho$ is dragged. Since [[Camera]]'s orbit position is computed in
 `processInput` (before `update`), `updateCamera` recomputes position/front itself so
 the frame shows this frame's camera.
 
@@ -80,14 +80,14 @@ alpha $\propto (n\cdot v)^2$ so it is a soft ball of light, pulsing.
 
 ## The math
 - Flows, equilibria, linearization: [[integral-curves]]. Stepping: [[runge-kutta]].
-- The bead's type is read off the eigenvalues of $Df(x^*)$; whether that linear picture
-  is *trustworthy* near $x^*$ is exactly the Hartman–Grobman question taken up in
+- The bead's type is read off the eigenvalues of $Df(v^*)$; whether that linear picture
+  is *trustworthy* near $v^*$ is exactly the Hartman–Grobman question taken up in
   `lorenz_equilibrium` (needs hyperbolicity — the tooltip says when it fails).
 
 ## Controls / uniforms
 **Other settings → LaTeX**: `equation`, `equilibrium labels`, `phi^t labels` sizes in px (the show toggles stay in their sections), saved.
 Panel sections (red `sectionHeader()` titles): **Lorenz system** ($\sigma, \rho, \beta$,
-`Classic (10, 28, 8/3)`, `show x' = f(x)`), **Equilibria** (one row per bead: just its
+`Classic (10, 28, 8/3)`, `show v' = f(v)`), **Equilibria** (one row per bead: just its
 name, `[focused]` on the zoomed one — point and type live in the hover tooltip; hovering the row lights the bead; zooming is by mouse only; `Back to global view`;
 `Ball here` drops the ball on the focused bead, remembering the global ball centre/radius,
 which come back on `Back to global view` or `Reset camera`), **Flow** (`Clear all` is also key **R**; arrow keys ramp the speed logarithmically down to $10^{-4}$, a decade per 1.2 s held, and `speed` is a logarithmic slider from there), **Ball of
@@ -97,9 +97,9 @@ centre, removed with the ball); **Single trajectories** has `camera follows the 
 at that moment decaying with a cubic ease-out over `follow ease`, as in [[vector-field]];
 another drop re-slides from where the camera is) and rides it (a focused bead
 takes over while zoomed; unticking eases back to where the camera was). Also in
-**Single trajectories**: (`label with phi^t(x0)` + size: every single
-carries $\phi^t(x_0)$, composed per frame from pieces typeset once, as in
-[[vector-field]] — always the symbol $x_0$, never the seed's numbers), collapsed
+**Single trajectories**: (`label with phi^t(v0)` + size: every single
+carries $\phi^t(v_0)$, composed per frame from pieces typeset once, as in
+[[vector-field]] — always the symbol $v_0$, never the seed's numbers), collapsed
 **Other settings** (camera; integrator — `ball` and `singles` methods, Taylor `order` +
 `tolerance`, `max step h`; equilibria look — `zoom distance`, `zoom duration`,
 `bead size`, `labels`; arrows; trails; performance), **Save settings** (parameters,

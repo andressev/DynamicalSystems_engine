@@ -187,6 +187,11 @@
   },
   "active": "1a9335d0d8506997",
   "lastOpenFiles": [
+    "decisions/0012-latex-board-per-sim.md",
+    "decisions/0012-latex-board-per-sim.md.tmp.107040.e5d9f26d87d7",
+    "modules/LatexBoard.md",
+    "modules/LatexBoard.md.tmp.107040.bb6624c26423",
+    "modules/Window.md.tmp.107040.d547c3ee15a8",
     "sims/lorenz-manifold-growth.md",
     "sims/lorenz-equilibrium.md",
     "sims/diagonal-linear.md",
@@ -198,9 +203,6 @@
     "Home.md.tmp.44396.c17641ac2767",
     "Home.md.tmp.44396.1da7270b77d1",
     "Home.md.tmp.44396.c1ac10dfed20",
-    "sims/learn-geodesic-level-sets.md.tmp.44396.5ed7e49ba53a",
-    "sims/learn-geodesic-level-sets.md.tmp.44396.54c5b57a3ae2",
-    "sims/sedf84mo6",
     "decisions/0011-precomputed-level-set-surfaces.md",
     "modules/LevelSetSurface.md",
     "architecture/roadmap.md",
@@ -220,8 +222,6 @@
     "Home.md",
     "conventions.md",
     "math/domain-coloring.md",
-    "modules/Expression.md",
-    "modules/Shapes.md",
-    "modules/SimRegistry.md"
+    "modules/Expression.md"
   ]
 }

@@ -12,12 +12,12 @@ code:
 `engine/include/engine/TaylorIntegrator.h`, `engine/src/TaylorIntegrator.cpp`
 
 ## What it is
-The Taylor series method for $\dot x = f(x,t)$: at each step the solution's polynomial
-$x(t+s) = \sum_{k=0}^{N} c_k s^k$ is built to order $N$ from the field's **jet** (its
+The Taylor series method for $\dot v = f(v,t)$: at each step the solution's polynomial
+$v(t+s) = \sum_{k=0}^{N} c_k s^k$ is built to order $N$ from the field's **jet** (its
 normalized derivatives along the solution), and the step is chosen from the decay of
 the last two coefficients (Jorba & Zou 2005):
 $h = 0.9 \min_{k \in \{N-1, N\}} (\varepsilon / \lVert c_k \rVert_\infty)^{1/k}$,
-$\varepsilon$ = `tolerance` $\cdot \max(1, \lVert x \rVert_\infty)$. For a polynomial field
+$\varepsilon$ = `tolerance` $\cdot \max(1, \lVert v \rVert_\infty)$. For a polynomial field
 the jet is an exact recurrence, so this is the accurate integrator for the few curves
 that must be right — the singles in [[lorenz-flow]] / [[lorenz-equilibrium]] — while the
 clouds stay on [[Integrator]]'s RK4. See [[runge-kutta]] for the RK side.

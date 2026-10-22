@@ -12,7 +12,7 @@ uniform vec3 u_color2;     // second color of the u_useRamp == 2 gradient
 uniform float u_alpha;     // overall opacity of this draw
 uniform float u_alphaTail; // opacity multiplier at the faded end (vFade = 0)
 uniform int u_round;       // 1 = points are shaded discs instead of squares
-uniform vec3 u_clipCenter;  // the ball V = B_r(x*): nothing is drawn outside it
+uniform vec3 u_clipCenter;  // the ball V = B_r(v*): nothing is drawn outside it
 uniform float u_clipRadius; // <= 0: no clipping
 
 // Same cold-to-hot ramp as vector_field: slow reads blue, fast reads red.

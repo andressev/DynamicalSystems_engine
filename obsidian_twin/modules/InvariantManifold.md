@@ -12,12 +12,12 @@ code:
 `engine/include/engine/InvariantManifold.h`, `engine/src/InvariantManifold.cpp`
 
 ## What it is
-The local stable or unstable manifold of an equilibrium $x^*$ of a **quadratic** field
-$f(x^* + u) = Au + Q(u,u)$, as a Taylor map $K:\mathbb{R}^k\to\mathbb{R}^3$
+The local stable or unstable manifold of an equilibrium $v^*$ of a **quadratic** field
+$f(v^* + u) = Au + Q(u,u)$, as a Taylor map $K:\mathbb{R}^k\to\mathbb{R}^3$
 ($k = 1$ or $2$) built by the parametrization method ([[lorenz-stable-manifold]]). $K$
 conjugates the linear flow on the parameter to the true flow:
 
-$$\varphi^t\big(x^* + K(s)\big) = x^* + K\big(e^{\Lambda t}s\big).$$
+$$\varphi^t\big(v^* + K(s)\big) = v^* + K\big(e^{\Lambda t}s\big).$$
 
 It is the [[lorenz-manifold]] recursion generalized to any equilibrium, either side,
 and a complex-conjugate eigenpair. In the Hartman–Grobman sims it *is* $h^{-1}$
@@ -29,13 +29,13 @@ restricted to $E^s$ and $E^u$ (see [[roadmap]]).
 
 ## How to use it
 1. Member: `engine::InvariantManifold Ws, Wu;`
-2. On parameter change: `Ws.build(A, Q, Side::Stable, order)` with $A = Df(x^*)$ and
+2. On parameter change: `Ws.build(A, Q, Side::Stable, order)` with $A = Df(v^*)$ and
    $Q$ as a tensor `Q[c][i][j]` ($Q(u,v)_c = \sum_{ij} Q_{cij} u_i v_j$). For Lorenz
    $Q$ is the same at every equilibrium: `Q[1][0][2] = -1` ($-u_x u_z$),
    `Q[2][0][1] = 1` ($u_x u_y$). `build` returns false (`error()`) when the side is
    0- or 3-dimensional or $A$ is degenerate.
-3. Map a point $\theta \in E$ (relative to $x^*$) to the manifold:
-   `x = x* + eval(toParam(theta))`. Flow it linearly: `flowParam(s, t)` $= e^{\Lambda t}s$.
+3. Map a point $\theta \in E$ (relative to $v^*$) to the manifold:
+   `v = v* + eval(toParam(theta))`. Flow it linearly: `flowParam(s, t)` $= e^{\Lambda t}s$.
    `linear(s)` $= Bs$ is the inverse of `toParam` on $E$.
 4. Validity: `maxRelDefect(r)` — worst relative invariance defect on the sphere of
    radius $r$ in $E$; `relDefectBelow(r, tol)` — the same verdict as `maxRelDefect(r) < tol`, stopping at the first sample over (for radius searches); `minDivisor()` — the smallest $|\mu - \lambda_j|$ met, the

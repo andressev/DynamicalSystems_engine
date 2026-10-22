@@ -19,8 +19,8 @@ arrows). [[vector-field]] draws both at once, which is the whole point of the si
 
 ## The equations
 An autonomous field gives the ODE
-$$\dot{\mathbf{x}} = F(\mathbf{x}), \qquad \mathbf{x}(0) = \mathbf{x}_0,$$
-and a time-dependent one $\dot{\mathbf{x}} = F(\mathbf{x}, t)$. In coordinates, the
+$$\dot{\mathbf{v}} = F(\mathbf{v}), \qquad \mathbf{v}(0) = \mathbf{v}_0,$$
+and a time-dependent one $\dot{\mathbf{v}} = F(\mathbf{v}, t)$. In coordinates, the
 sim's $\mathbb{R}^3$ case is
 $$\dot{x} = f(x,y,z,t), \qquad \dot{y} = g(x,y,z,t), \qquad \dot{z} = h(x,y,z,t).$$
 
@@ -30,8 +30,8 @@ in the picture is either a projection artifact or a numerical error), and the fl
 $\varphi_t$ is invertible — running $t \to -t$ retraces the same curve, which is what
 the "reverse" toggle does.
 
-**Equilibria** are the zeros $F(\mathbf{x}^*) = 0$; near one, $F(\mathbf{x}^* +
-\mathbf{u}) \approx J\mathbf{u}$ with $J = DF(\mathbf{x}^*)$, and the eigenvalues of
+**Equilibria** are the zeros $F(\mathbf{v}^*) = 0$; near one, $F(\mathbf{v}^* +
+\mathbf{u}) \approx J\mathbf{u}$ with $J = DF(\mathbf{v}^*)$, and the eigenvalues of
 $J$ classify the local picture — saddle, node, spiral, center (real/complex,
 sign of the real part). The glyph field goes visually dark at an equilibrium because
 $|F| \to 0$ there, which is exactly what the color ramp is for.

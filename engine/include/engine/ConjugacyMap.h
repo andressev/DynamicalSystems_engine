@@ -7,12 +7,12 @@
 
 namespace engine {
 
-// The (manifold-exact) Hartman-Grobman map at a hyperbolic equilibrium x*, evaluated
+// The (manifold-exact) Hartman-Grobman map at a hyperbolic equilibrium v*, evaluated
 // per vertex on the GPU:
 //     h~^{-1}(theta) = K_s(s) + K_u(u),   theta = B_s s + B_u u  (E^s (+) E^u = R^3)
 // built from the two InvariantManifold parametrizations. On E^s and E^u it IS the
 // conjugacy restricted to the invariant manifolds; off them it is an interpolation
-// (the true h is not computable this way). Result is relative to x*.
+// (the true h is not computable this way). Result is relative to v*.
 //
 // The Taylor coefficients of both sides go into one uniform buffer; glsl() is the
 // matching GLSL (block + `vec3 hInv(vec3 theta)`) a sim splices into its vertex shader,

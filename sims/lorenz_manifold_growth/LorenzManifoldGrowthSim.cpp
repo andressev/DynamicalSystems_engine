@@ -34,6 +34,7 @@
 #include <future>
 #include <map>
 #include <memory>
+#include <numeric>
 #include <random>
 #include <sstream>
 #include <string>
@@ -190,12 +191,12 @@ struct Settings {
     int ballCount = 200;
     bool ballFilled = false;
     bool ballWithSingle = false;  // drop a followable single at the ball's centre too
-    float eqBallRadius = 1.0f;    // popup balls: around x*, and on W_loc (capped at its r)
+    float eqBallRadius = 1.0f;    // popup balls: around v*, and on W until a side sets its own
     bool followSingle = false;    // the orbit camera tracks the newest single
 
     float spawnDepth = 0.3f;      // click seeds: fraction of camera -> orbit center
     float singleScale = 2.0f;
-    bool showTimeLabels = true;   // phi^t(x_0) above every single
+    bool showTimeLabels = true;   // phi^t(v_0) above every single
     float timeLabelSize = 36.0f;
 
     bool showTrails = true;
@@ -204,9 +205,10 @@ struct Settings {
     float trailWidth = 1.5f;
     float trailAlpha = 0.7f;
     float particleSize = 7.0f;
+    float particleGlow = 0.6f;    // additive halo around manifold-ball heads, 0 = off
 
     int manifoldOrder = 12;       // K's Taylor order
-    float locGrowSeconds = 1.5f;  // the local manifold grows out of x* over this
+    float locGrowSeconds = 1.5f;  // the local manifold grows out of v* over this
     float manifoldWidth = 3.0f;   // px, curves (local and global)
     float diskAlpha = 0.3f;       // a 2-D local manifold's fill
     float branchTime = 21.0f;     // a global branch flows this much field time, then stops
@@ -267,7 +269,7 @@ std::vector<Setting> settingsTable(Settings& s)
         {"trailBySpeed", nullptr, nullptr, &s.trailBySpeed},
         {"trailPoints", nullptr, &s.trailPoints},
         {"trailWidth", &s.trailWidth}, {"trailAlpha", &s.trailAlpha},
-        {"particleSize", &s.particleSize},
+        {"particleSize", &s.particleSize}, {"particleGlow", &s.particleGlow},
         {"manifoldOrder", nullptr, &s.manifoldOrder},
         {"locGrowSeconds", &s.locGrowSeconds},
         {"manifoldWidth", &s.manifoldWidth},
@@ -345,6 +347,7 @@ void loadSettingsFile(Settings& s, const char* path)
     s.surfaceGrowSeconds = std::clamp(s.surfaceGrowSeconds, 1.0f, 300.0f);
     s.backSpeed = std::clamp(s.backSpeed, 0.1f, 1000.0f);
     s.pauseBeyond = std::clamp(s.pauseBeyond, 0.5f, 50.0f);
+    s.particleGlow = std::clamp(s.particleGlow, 0.0f, 1.0f);
 }
 
 // ---- the sim --------------------------------------------------------------------
@@ -352,7 +355,7 @@ void loadSettingsFile(Settings& s, const char* path)
 // The global Lorenz flow (arrow field, balls and singles, the equilibria as red beads,
 // as lorenz_flow) where the invariant manifolds of each equilibrium are grown: hover a
 // bead and a popup offers, per side, "grow W_loc" (the Taylor patch of the
-// parametrization method growing out of x*) and then "grow W" (the global manifold —
+// parametrization method growing out of v*) and then "grow W" (the global manifold —
 // for a curve, the flow carrying the ends of W_loc on; for a surface, not available
 // until geodesic level sets are in). A watched branch carries the camera along.
 // See obsidian_twin/sims/lorenz-manifold-growth.md.
@@ -518,7 +521,7 @@ public:
         }
         clock += dt;
 
-        // the local manifolds grow out of x*
+        // the local manifolds grow out of v*
         for (int i = 0; i < eqCount; ++i)
             for (int side = 0; side < 2; ++side)
             {
@@ -632,27 +635,57 @@ public:
         // hidden or tinted by what really is in front of it
         renderLocalCurves(px);
 
+        // per curve only what changes: line width and head size follow the kind, and
+        // the speed ramp is toggled only when it is on (u_useRamp is 0 here)
         runner.beginDraw();
+        int widthKind = -1;
         for (const Curve& c : curves)
         {
-            float k = c.kind == Kind::Single ? cfg.singleScale : 1.0f;
+            if ((int)c.kind != widthKind)
+            {
+                widthKind = (int)c.kind;
+                const float k = c.kind == Kind::Single ? cfg.singleScale : 1.0f;
+                glLineWidth(cfg.trailWidth * k * px);
+                shader.setFloat("u_pointSize", cfg.particleSize * k * px);
+            }
+            shader.setVec3("u_color", c.color);
             if (cfg.showTrails)
             {
-                glLineWidth(cfg.trailWidth * k * px);
-                shader.setVec3("u_color", c.color);
-                shader.setInt("u_useRamp", cfg.trailBySpeed ? 1 : 0);
+                if (cfg.trailBySpeed)
+                    shader.setInt("u_useRamp", 1);
                 shader.setFloat("u_alpha", cfg.trailAlpha * sceneFade);
                 c.traj->draw();
-                shader.setInt("u_useRamp", 0);
+                if (cfg.trailBySpeed)
+                    shader.setInt("u_useRamp", 0);
             }
             shader.setFloat("u_alpha", sceneFade);
-            shader.setVec3("u_color", c.traj->diverged() ? kDivergedColor : c.color);
-            shader.setFloat("u_pointSize", cfg.particleSize * k * px);
+            if (c.traj->diverged())
+                shader.setVec3("u_color", kDivergedColor);
             shader.setInt("u_round", 1);
             c.traj->drawHead();
             shader.setInt("u_round", 0);
         }
         renderBranches(px);
+        // a soft additive halo around the heads of the balls seeded on W, so they shine
+        // through the trails; it never writes depth
+        if (cfg.particleGlow > 0.0f)
+        {
+            glDepthMask(GL_FALSE);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            shader.setInt("u_round", 2);
+            shader.setFloat("u_alpha", cfg.particleGlow * sceneFade);
+            for (const Curve& c : curves)
+            {
+                if (!c.onManifold || c.traj->diverged())
+                    continue;
+                shader.setVec3("u_color", c.color);
+                shader.setFloat("u_pointSize", kGlowScale * cfg.particleSize * px);
+                c.traj->drawHead();
+            }
+            shader.setInt("u_round", 0);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glDepthMask(GL_TRUE);
+        }
         shader.setFloat("u_alpha", 1.0f);
         runner.endDraw();
         glLineWidth(1.0f);
@@ -775,14 +808,15 @@ private:
         Kind kind;
         bool withBall = false;   // the single at the ball's centre: goes with it
         int ball = -1;                 // drop id of the ball it belongs to (-1: none)
+        bool onManifold = false;       // seeded on W by a popup `ball`: its head glows
     };
 
-    // Pieces of the \phi^t(x_0) label, each typeset once and re-composed every frame, so
+    // Pieces of the \phi^t(v_0) label, each typeset once and re-composed every frame, so
     // a t that changes every frame costs no typesetting (as in vector_field).
     struct TimeLabelGlyphs {
         float size = 0.0f;
         engine::LatexImage phi;
-        engine::LatexImage seedSymbol;   // (x_0)
+        engine::LatexImage seedSymbol;   // (v_0)
         engine::LatexImage chars[12];    // superscript pieces, in kTimeLabelChars order
     };
     static constexpr const char* kTimeLabelChars = "0123456789.-";
@@ -802,8 +836,9 @@ private:
         std::string error;
         int dim = 0;                      // 1 (curve) or 2 (surface); 0 = none
         double radius = 0.0;              // |theta| up to which K is trusted (defect check)
+        float ballRadius = -1.0f;         // its "ball" on W (< 0: eqBallRadius until set)
         bool local = false;               // "grow W_loc" pressed
-        float grow = 0.0f;                // W_loc growing out of x*, 0 -> 1
+        float grow = 0.0f;                // W_loc growing out of v*, 0 -> 1
         bool global = false;              // "grow W" pressed (a curve, or a stored surface)
         double shownEta = 0.0;            // a surface: geodesic distance grown past W_loc
         Branch branch[2];                 // the + and - ends
@@ -888,7 +923,7 @@ private:
             changed = true;
         }
         ImGui::SameLine();
-        ImGui::Checkbox("show x' = f(x)", &cfg.showSystemLatex);
+        ImGui::Checkbox("show v' = f(v)", &cfg.showSystemLatex);
         if (changed)
             applyParams();
         ImGui::TextDisabled("field time t = %.3f", fieldTime);
@@ -948,7 +983,7 @@ private:
                            ImGuiSliderFlags_Logarithmic);
     }
 
-    // Sizes of everything typeset: the system top-right, the O / C+- labels, phi^t(x0).
+    // Sizes of everything typeset: the system top-right, the O / C+- labels, phi^t(v0).
     void drawLatexUI()
     {
         sectionHeader("LaTeX");
@@ -1011,7 +1046,7 @@ private:
         ImGui::SliderFloat("click depth", &cfg.spawnDepth, 0.05f, 1.0f,
                            "%.2f of the way to the orbit center");
         ImGui::SliderFloat("singles thickness", &cfg.singleScale, 1.0f, 4.0f, "%.1f x");
-        ImGui::Checkbox("label with phi^t(x0)", &cfg.showTimeLabels);
+        ImGui::Checkbox("label with phi^t(v0)", &cfg.showTimeLabels);
         if (ImGui::Button("Clear singles"))
             removeKind(Kind::Single);
         ImGui::SameLine();
@@ -1075,6 +1110,7 @@ private:
         ImGui::SliderFloat("trail width", &cfg.trailWidth, 1.0f, 6.0f);
         ImGui::SliderFloat("trail alpha", &cfg.trailAlpha, 0.05f, 1.0f);
         ImGui::SliderFloat("particle size", &cfg.particleSize, 2.0f, 20.0f);
+        ImGui::SliderFloat("manifold ball glow", &cfg.particleGlow, 0.0f, 1.0f, "%.2f");
     }
 
     // The many curves keep a cheap method; singles and the manifold branches (few, and
@@ -1285,7 +1321,7 @@ private:
                 return;
             }
         }
-        // a ball of trajectories around x* (the panel's particle count / fill volume)
+        // a ball of trajectories around v* (the panel's particle count / fill volume)
         if (ImGui::SmallButton("Ball"))
             dropBall(e.pos, cfg.eqBallRadius, false, false);
         ImGui::SameLine();
@@ -1324,6 +1360,12 @@ private:
             ImGui::SameLine();
             if (ImGui::SmallButton("ball"))
                 dropManifoldBall(e, side);
+            ImGui::SameLine();
+            float r = manifoldBallRadius(S);
+            ImGui::SetNextItemWidth(110.0f);
+            if (ImGui::SliderFloat("##ballR", &r, 0.01f, std::max((float)S.radius, cfg.domainR),
+                                   "r = %.2f", ImGuiSliderFlags_Logarithmic))
+                S.ballRadius = r;
         }
 
         if (!S.ok)
@@ -1523,7 +1565,7 @@ private:
     }
 
     // A worker's result into the sides: K, radius, meshes. Surfaces are drawn through
-    // the conjugacy map (x* + K(theta) in the vertex shader), which needs both sides.
+    // the conjugacy map (v* + K(theta) in the vertex shader), which needs both sides.
     void applyManifolds(EqView& e, EqResult r)
     {
         bool surface = false;
@@ -1579,7 +1621,7 @@ private:
         return lo;
     }
 
-    // x* + K(s) for the point theta of E (relative to x*).
+    // v* + K(s) for the point theta of E (relative to v*).
     static glm::vec3 kPoint(const Side& S, const glm::vec3& theta)
     {
         auto s = S.K.toParam({theta.x, theta.y, theta.z});
@@ -1587,7 +1629,7 @@ private:
         return glm::vec3((float)p[0], (float)p[1], (float)p[2]);
     }
 
-    // The mesh of W_loc: a curve as two strips of kCurveSteps + 1 points from x* out to
+    // The mesh of W_loc: a curve as two strips of kCurveSteps + 1 points from v* out to
     // +-radius along E (K on the CPU); a surface as the unit disk of E in rings x
     // segments of triangles, followed by every ring as a loop — surface_vertex.glsl
     // scales it to the grown radius and pushes it through K (ConjugacyMap::hInv).
@@ -1706,31 +1748,32 @@ private:
         return v > cfg.backSpeed ? h * cfg.backSpeed / v : h;
     }
 
-    // Advance a list of curves by h of field time, each by its curveStep: the ones at
-    // full h together (in parallel), the slowed ones one by one. singlesMethod: the
+    // Advance a list of curves by h of field time, each by its own curveStep, all in one
+    // parallel pass (+ upload); the ones standing still are left out. singlesMethod: the
     // singles' method (Taylor by default), else the balls' `method`.
     void advanceCurves(const std::vector<engine::Trajectory*>& list, double h, bool singlesMethod)
     {
-        if (list.empty())
-            return;
-        auto run = [&](const std::vector<engine::Trajectory*>& l, double step) {
-            if (!singlesMethod)
-                runner.advance(l, integrator, rhs, step);
-            else if (cfg.singleMethod == kTaylor)
-                runner.advance(l, taylor, jet, step, cfg.maxStep);
-            else
-                runner.advance(l, singleIntegrator, rhs, step);
-        };
-        std::vector<engine::Trajectory*> full;
+        std::vector<engine::Trajectory*> moving;
+        std::vector<double> steps;
+        moving.reserve(list.size());
+        steps.reserve(list.size());
         for (engine::Trajectory* t : list)
         {
             const double step = curveStep(*t, h);
-            if (step == h)
-                full.push_back(t);
-            else if (step != 0.0)
-                run({t}, step);
+            if (step != 0.0)
+            {
+                moving.push_back(t);
+                steps.push_back(step);
+            }
         }
-        run(full, h);
+        if (moving.empty())
+            return;
+        if (!singlesMethod)
+            runner.advance(moving, integrator, rhs, steps);
+        else if (cfg.singleMethod == kTaylor)
+            runner.advance(moving, taylor, jet, steps, cfg.maxStep);
+        else
+            runner.advance(moving, singleIntegrator, rhs, steps);
     }
 
     // The 1-D W_loc of every grown side, as far as it has grown, as lines.
@@ -2249,7 +2292,7 @@ private:
 
     // ---- overlays -------------------------------------------------------------------
 
-    // \phi^t(x_0) above every single: the flow map for the ODE time integrated since it
+    // \phi^t(v_0) above every single: the flow map for the ODE time integrated since it
     // was dropped (negative when running in reverse). Same composition as vector_field.
     void drawTimeLabels()
     {
@@ -2262,7 +2305,7 @@ private:
             // TeX proportions: superscripts at scriptstyle (0.7) raised ~0.42 em
             g.size = S;
             g.phi.set(R"(\phi)", S, kSingleColor);
-            g.seedSymbol.set(R"((x_0))", S, kSingleColor);
+            g.seedSymbol.set(R"((v_0))", S, kSingleColor);
             for (int i = 0; i < 12; ++i)
             {
                 char ch = kTimeLabelChars[i];
@@ -2284,7 +2327,7 @@ private:
             char num[32];
             std::snprintf(num, sizeof(num), "%.2f", t);
 
-            // one baseline: \phi, raised digits, (x_0)
+            // one baseline: \phi, raised digits, (v_0)
             const engine::LatexImage* pieces[40];
             float xs[40], ys[40];
             int n = 0;
@@ -2486,15 +2529,59 @@ private:
             trimBalls();
     }
 
-    // A ball of trajectories lying on W_loc: x* + K(theta) for theta in E within
-    // min(eqBallRadius, trusted r) — evenly along the segment for a curve, a sunflower
-    // over the disk for a surface — in the side's color, one ball like dropBall's.
+    // The radius of a side's ball: its own slider once moved, else the popup's Ball r.
+    float manifoldBallRadius(const Side& S) const
+    {
+        return S.ballRadius > 0.0f ? S.ballRadius : cfg.eqBallRadius;
+    }
+
+    // The point of W at theta in E, also past the trusted r where K alone is off W:
+    // theta's parameter is pulled back into the trusted disk by the linear flow
+    // (e^{-Lambda t}, t from the slowest rate) and that point carried out by the true
+    // flow for t — forward on W^u, backward on W^s — by the conjugacy
+    // phi^t(v* + K(s)) = v* + K(e^{Lambda t} s). Off-W error shrinks on the way out.
+    glm::vec3 manifoldPoint(const EqView& e, int side, const glm::vec3& theta) const
+    {
+        const Side& S = e.side[side];
+        const double limit = 0.9 * S.radius;
+        const double len = glm::length(theta);
+        if (len <= limit)
+            return e.pos + kPoint(S, theta);
+        double rate = 1e30;
+        for (int i = 0; i < S.dim; ++i)
+            rate = std::min(rate, std::abs(S.K.eigenvalue(i).real()));
+        if (rate <= 0.0)
+            return e.pos + kPoint(S, theta);
+        const double away = side == kUnstable ? 1.0 : -1.0;   // flow direction out of v*
+        const auto s = S.K.toParam({theta.x, theta.y, theta.z});
+        double t = away * std::log(len / limit) / rate;
+        auto s0 = S.K.flowParam(s, -t);
+        // B is not orthonormal: step on until the pulled-back point is really inside
+        for (int i = 0; i < 50; ++i)
+        {
+            const auto l = S.K.linear(s0);
+            if (std::sqrt(l[0] * l[0] + l[1] * l[1] + l[2] * l[2]) <= limit)
+                break;
+            t += away * 0.1 / rate;
+            s0 = S.K.flowParam(s, -t);
+        }
+        const auto k = S.K.eval(s0);
+        double x[3] = {e.pos.x + k[0], e.pos.y + k[1], e.pos.z + k[2]};
+        double time = 0.0;
+        taylor.advance(jet, 3, x, time, t);
+        return glm::vec3((float)x[0], (float)x[1], (float)x[2]);
+    }
+
+    // A ball of trajectories lying on W: manifoldPoint(theta) for theta in E within
+    // manifoldBallRadius — evenly along the segment for a curve, a sunflower over the
+    // disk for a surface — in the side's color, one ball like dropBall's. Past the
+    // trusted r it reaches outside W_loc.
     void dropManifoldBall(const EqView& e, int side)
     {
         const Side& S = e.side[side];
         if (!S.ok || S.dim < 1)
             return;
-        const float rr = std::min(cfg.eqBallRadius, (float)S.radius);
+        const float rr = manifoldBallRadius(S);
         const glm::vec3 color = side == kStable ? kStableColor : kUnstableColor;
         auto o0 = S.K.orthoBasis(0);
         const glm::vec3 e0((float)o0[0], (float)o0[1], (float)o0[2]);
@@ -2507,8 +2594,11 @@ private:
         const size_t first = curves.size();
         const float golden = 2.39996323f;
         const int n = std::max(cfg.ballCount, 2);
-        for (int k = 0; k < n && curves.size() < kMaxTrajectories; ++k)
-        {
+        // the seeds are independent (K, and past r an integration each): all cores
+        std::vector<glm::vec3> seeds((size_t)n);
+        std::vector<int> ks((size_t)n);
+        std::iota(ks.begin(), ks.end(), 0);
+        std::for_each(std::execution::par, ks.begin(), ks.end(), [&](int k) {
             glm::vec3 theta;
             if (S.dim == 1)
                 theta = rr * (2.0f * (float)k / (float)(n - 1) - 1.0f) * e0;
@@ -2518,7 +2608,18 @@ private:
                 const float a = golden * (float)k;
                 theta = rad * (std::cos(a) * e0 + std::sin(a) * e1);
             }
-            addTrajectory(e.pos + kPoint(S, theta), color, Kind::Ball);
+            seeds[(size_t)k] = manifoldPoint(e, side, theta);
+        });
+        for (int k = 0; k < n && curves.size() < kMaxTrajectories; ++k)
+        {
+            const glm::vec3 seed = seeds[(size_t)k];
+            if (std::isfinite(seed.x) && std::isfinite(seed.y) && std::isfinite(seed.z))
+            {
+                const size_t before = curves.size();
+                addTrajectory(seed, color, Kind::Ball);
+                if (curves.size() > before)
+                    curves.back().onManifold = true;
+            }
         }
         const int id = nextBallId++;
         for (size_t i = first; i < curves.size(); ++i)
@@ -2656,6 +2757,7 @@ private:
     float arrowsFade = -1.0f;         // arrow-field opacity, follows showArrows (-1: unset)
     static constexpr float kArrowFadeSeconds = 0.35f;
     static constexpr int kMaxBalls = 3;   // V stacks balls up to this many
+    static constexpr float kGlowScale = 3.0f;   // halo diameter / head diameter
     int nextBallId = 0;
     glm::vec3 followReturn{0.0f};     // orbit centre to ease back to when it stops
     const engine::Trajectory* followedTraj = nullptr; // identity of the followed head

@@ -8,7 +8,7 @@ Every sim so far evaluates the user's typed function **in a shader**: [[Expressi
 generates GLSL, it is spliced into a template and the program is hot-recompiled on Apply
 ([[0003-hand-rolled-parser-glsl-codegen]]). The M3 vector-field work needed the same
 typed function in a place a shader cannot serve it: an [[Integrator]] stepping a
-trajectory needs $F(\mathbf{x}, t)$ at a point that depends on the previous answer, on
+trajectory needs $F(\mathbf{v}, t)$ at a point that depends on the previous answer, on
 the CPU, thousands of times a second.
 
 That leaves a choice for the *glyph grid*: evaluate the field twice (GLSL for arrows,

@@ -3,6 +3,7 @@
 
 #include <engine/Window.h>
 #include <engine/Camera.h>
+#include <engine/LatexBoard.h>
 #include <engine/SimRegistry.h>
 #include <map>
 #include <memory>
@@ -85,6 +86,7 @@ private:
     Camera cam;
     SimRegistry registry;
     std::unique_ptr<Sim> activeSim;
+    LatexBoard board;   // L: the active sim's board.tex as a white card; PageDown/PageUp page
     int activeIndex = -1;
     std::vector<Thumbnail> thumbnails;
     bool wantMenu = false; // set by the UI, applied after the frame's draw

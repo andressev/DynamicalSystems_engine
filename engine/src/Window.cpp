@@ -104,12 +104,19 @@ void Window::setFullscreen(bool on)
         const GLFWvidmode* mode = glfwGetVideoMode(target);
         if (!mode)
             return;
-        // the monitor's own mode = "windowed full screen": no mode switch, nothing else on screen
-        glfwSetWindowMonitor(window, target, 0, 0, mode->width, mode->height, mode->refreshRate);
+        // borderless windowed: an undecorated window laid over the monitor, not owned by
+        // it. Handing GLFW the monitor would make it exclusive full screen, which
+        // iconifies on focus loss and makes Windows leave / re-enter the mode on every
+        // Alt-Tab (a black flash and a hitch each way).
+        int mx, my;
+        glfwGetMonitorPos(target, &mx, &my);
+        glfwSetWindowAttrib(window, GLFW_DECORATED, GLFW_FALSE);
+        glfwSetWindowMonitor(window, nullptr, mx, my, mode->width, mode->height, 0);
         fullscreenOn = true;
     }
     else
     {
+        glfwSetWindowAttrib(window, GLFW_DECORATED, GLFW_TRUE);
         glfwSetWindowMonitor(window, nullptr, savedX, savedY, savedW, savedH, 0);
         fullscreenOn = false;
     }

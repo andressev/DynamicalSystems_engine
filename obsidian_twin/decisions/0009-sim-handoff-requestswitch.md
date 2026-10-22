@@ -5,7 +5,7 @@
 ## Context
 The Hartman–Grobman track is two sims kept apart so neither carries the other's UI
 ([[roadmap]]): [[lorenz-flow]] (global) and [[lorenz-equilibrium]] (local, inside a
-ball $V$ around $x^*$). Clicking a bead must carry you from one to the other as one
+ball $V$ around $v^*$). Clicking a bead must carry you from one to the other as one
 continuous motion, and back. Until now a sim could only be entered from the menu, and
 sims never know each other (separate static libs, [[0004-modules-vs-simulations]]).
 
@@ -23,7 +23,7 @@ sims never know each other (separate static libs, [[0004-modules-vs-simulations]
 
 ## Consequences
 - A sim's in-memory state (trajectories) does not survive the round trip — only what's in
-  the map. Enough here: parameters, which $x^*$, the global view to return to.
+  the map. Enough here: parameters, which $v^*$, the global view to return to.
 - Keys are stringly typed; a typo silently falls back to the default. Acceptable for two
   sims; a typed struct would need a shared header (a module) if this spreads.
 - The standalone `lorenz_flow` keeps the old behaviour: the zoom lands and stays.

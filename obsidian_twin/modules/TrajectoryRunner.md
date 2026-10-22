@@ -29,6 +29,9 @@ flow: **integrate** (CPU; optionally across all cores, one task per curve), **up
    A Taylor overload, `advance(trajs, taylor, jet, h, sampleStep)` ([[TaylorIntegrator]]),
    serves curves on another method — call both in one frame (cloud on RK4, singles on
    Taylor); the timings are summed per frame and smoothed at `beginDraw()`.
+   Both have a per-curve-step form, `advance(trajs, ..., dts)` (`dts[i]` for
+   `trajs[i]`), still one parallel pass — for a time change per curve
+   ([[lorenz-manifold-growth]]'s backward speed cap).
 3. `render`: `runner.beginDraw()` / `runner.endDraw()` around the trail + head draws.
 4. UI: a "Performance" section calling `runner.drawUI()` (toggle + smoothed timings).
 5. Reference sims: [[vector-field]], [[diagonal-linear]], [[lorenz-flow]].
@@ -41,3 +44,8 @@ flow: **integrate** (CPU; optionally across all cores, one task per curve), **up
   submit** (2000 draw calls + uniform changes) and **GPU 1 → 7+ ms as the trails fill**
   (~3M line vertices). Drawing, not integration, is the cost — next step is batching
   every trail into one buffer / one multi-draw, then trail-point budget.
+- 2026-10-21, Debug, [[lorenz-manifold-growth]], a 1000-curve ball × 3000 points, vsync
+  off: draw ~6–8 ms CPU (2 draws per curve) and ~5 ms GPU, integrate ~0.3 ms. The
+  per-curve-step pass took the backward update from ~3 ms (capped curves one by one) to
+  ~1 ms. Caching uniform locations in [[Shader]] (a hash map) measured no faster in
+  Debug than `glGetUniformLocation` — tried and reverted.

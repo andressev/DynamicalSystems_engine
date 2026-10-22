@@ -61,6 +61,7 @@ core is the skeleton sims don't choose). New modules via the `/new-module` skill
 - [[FrameCopy]] — a texture copy of the frame so far, for effects that bend what is behind them
 - [[GpuTimer]] — GPU time of a stretch of draw calls (timer queries, never stalls)
 - [[LatexImage]] — LaTeX math typeset (MicroTeX) into a texture, drawn via ImGui
+- [[LatexBoard]] — L: the sim's `board.tex` pages on a white card (App-owned, for talks)
 
 ### math — pure computation, std-only
 - [[Expression]] — function parser: UI string → AST → CPU eval (complex + real) + GLSL codegen
@@ -79,8 +80,8 @@ core is the skeleton sims don't choose). New modules via the `/new-module` skill
 - [[riemann-sphere]] — domain coloring of complex polynomials on the Riemann sphere
 - [[surface-renderer-ray-marched]] — raymarched implicit surfaces f(x,y,z) = c, live c sweep
 - [[lorenz-manifold]] — geodesic rings of the Lorenz stable manifold, built from a Taylor-series patch
-- [[vector-field]] — any typed field on R2/R3: glyphs, typeset $\dot{x} = f(x)$, balls of trajectories and $\phi^t(x_0)$-labelled singles; per-mode settings
-- [[diagonal-linear]] — $\dot x = \mathrm{diag}(\lambda)\,x$ in R3: stable/unstable subspaces + balls of trajectories
+- [[vector-field]] — any typed field on R2/R3: glyphs, typeset $\dot{v} = f(v)$, balls of trajectories and $\phi^t(v_0)$-labelled singles; per-mode settings
+- [[diagonal-linear]] — $\dot v = \mathrm{diag}(\lambda)\,v$ in R3: stable/unstable subspaces + balls of trajectories
 - [[lorenz-flow]] — the global Lorenz flow: field, trajectories, equilibria to hover (linearization) and click (eased zoom → handoff)
 - [[lorenz-equilibrium]] — the flow inside a glass ball $V$ around one Lorenz equilibrium; where Hartman–Grobman stages A/B/C land
 - [[lorenz-manifold-growth]] — grow $W^s$/$W^u$ of each Lorenz equilibrium from a hover popup: the Taylor patch $W_{loc}$ first, then the flow carries a curve on, a stored surface grows band by band ($W^s(O)$, classic parameters); watch a branch
@@ -108,3 +109,4 @@ sims link to them instead of re-deriving. New concepts from `math/_template.md`.
 - [[0009-sim-handoff-requestswitch]]
 - [[0010-manifold-popup-and-copied-baseline]]
 - [[0011-precomputed-level-set-surfaces]]
+- [[0012-latex-board-per-sim]]

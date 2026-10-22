@@ -13,7 +13,7 @@ code:
 ## What it is
 One integral curve of a vector field ([[integral-curves]]), integrated in real time and
 drawn as a growing polyline. It owns three things that always travel together: the ODE
-state ($x$ and $t$), the CPU point list, and the dynamic [[Mesh]] those points stream
+state ($v$ and $t$), the CPU point list, and the dynamic [[Mesh]] those points stream
 into. A sim keeps a handful of these and calls `advance` each frame; nothing else in the
 sim needs to know how a trail is buffered.
 
@@ -42,7 +42,7 @@ from a UI callback — never in the sim's constructor.
    `velocity()` (it must also clear [[Camera]]'s `inputEnabled`). [[vector-field]]
    orbits a followed single (moving `position` with `orbitCenter` so it never lags).
 5. Reference sims: [[vector-field]], [[diagonal-linear]] — `time()` minus the seed
-   time is the $t$ in their $\phi^t(x_0)$ labels.
+   time is the $t$ in their $\phi^t(v_0)$ labels.
 
 Interface:
 - `advance(integrator, f, dt)` — `dt < 0` runs the flow backwards ([[Integrator]]).

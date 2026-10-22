@@ -40,7 +40,7 @@ struct LorenzSystem {
     // Df(x) = [[-sigma, sigma, 0], [rho - z, -1, -x], [y, x, -beta]].
     void jacobian(const Vec3& x, double J[3][3]) const;
 
-    // f(x* + u) = Df(x*) u + Q(u, u), the same Q at every equilibrium (the field is
+    // f(v* + u) = Df(v*) u + Q(u, u), the same Q at every equilibrium (the field is
     // quadratic): y' gets -u_x u_z, z' gets u_x u_y. In InvariantManifold's Q[c][i][j].
     static InvariantManifold::Quadratic quadratic();
 };

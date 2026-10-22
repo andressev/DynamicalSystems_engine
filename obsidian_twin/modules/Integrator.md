@@ -11,7 +11,7 @@ code:
 `engine/include/engine/Integrator.h`, `engine/src/Integrator.cpp`
 
 ## What it is
-Fixed-step ODE integrator for $\dot{x} = f(x, t)$ — Euler, midpoint RK2 or classic RK4
+Fixed-step ODE integrator for $\dot{v} = f(v, t)$ — Euler, midpoint RK2 or classic RK4
 ([[runge-kutta]]) — over any right-hand side a caller can express as a callable.
 Dimension-agnostic up to `kMaxDim = 4`, stack-only inside (no allocation per step), and
 deliberately ignorant of where $f$ comes from: a parsed [[VectorField]], a hard-coded

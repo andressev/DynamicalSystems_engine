@@ -30,8 +30,9 @@ Sims never construct one; query it via `app.window()`:
   codes match ASCII). Lets sims poll keys without touching GLFW directly.
 - `handle()` — raw `GLFWwindow*` for [[Camera]] input and the ImGui backend.
 - `setFullscreen(bool)` / `toggleFullscreen()` / `fullscreen()` — borderless full
-  screen on the monitor holding the window (its current video mode via
-  `glfwSetWindowMonitor`: no mode switch, no title bar, no task bar). The title-bar
+  screen on the monitor holding the window: undecorated and laid over the monitor with
+  `glfwSetWindowMonitor(window, nullptr, ...)` — not handed the monitor, which would be
+  exclusive full screen (iconifies and switches modes on every Alt-Tab). The title-bar
   maximize button enters it too (`maximizeCallback` → applied in `pollEvents`, after
   a `glfwRestoreWindow` so the saved geometry is the plain window); leaving restores
   that windowed position and size. [[App]] binds **F11** to the toggle.

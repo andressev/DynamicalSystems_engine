@@ -11,15 +11,15 @@ code:
 `sims/vector_field/` — lib `sim_vector_field`, standalone exe `vector_field_standalone`.
 
 Type any vector field on $\mathbb{R}^2$ or $\mathbb{R}^3$: see it as arrow glyphs, read
-$\dot{\mathbf{x}} = f(\mathbf{x})$ typeset from exactly what you typed, and drop a ball
+$\dot{\mathbf{v}} = f(\mathbf{v})$ typeset from exactly what you typed, and drop a ball
 of trajectories or single labelled ones into the flow.
 
 ## What is being simulated
-The flow of $\dot{\mathbf{x}} = f(\mathbf{x}, t)$ for a field typed at runtime
+The flow of $\dot{\mathbf{v}} = f(\mathbf{v}, t)$ for a field typed at runtime
 ([[integral-curves]]). Two pictures of the same object at once: the *instantaneous*
 field (glyphs, direction by orientation, $|f|$ by color) and the *integrated* field —
 a ball (in R2 a disk) of seeds deforming under the flow, and single trajectories, each
-labelled $\phi^t(x_0)$ with $x_0$ written out. R2 is the phase plane (saddle, center,
+labelled $\phi^t(v_0)$ with $v_0$ written out. R2 is the phase plane (saddle, center,
 spiral sink, van der Pol, damped pendulum, a time-dependent field); R3 the strange
 attractors (Lorenz, Rössler, Thomas — the latter's field times 10, so it runs at the
 others' pace) — a ball dropped into Lorenz traces the attractor.
@@ -67,15 +67,15 @@ follows $s$ (screen-constant). R3 is a cube of `domain radius`.
 - top-right $\begin{pmatrix}\dot x\\ \dot y\end{pmatrix} = \begin{pmatrix}f_1\\ f_2\end{pmatrix}$
   typeset from `VectorField::latex()` — [[Expression]]'s LaTeX printer over the parsed
   AST, so it is exactly the integrated field, re-typeset only on Apply;
-- $\phi^{t}(x_0)$ above each single, $t$ = time since it was dropped (`time() - t0`),
+- $\phi^{t}(v_0)$ above each single, $t$ = time since it was dropped (`time() - t0`),
   composed every frame from pieces typeset once (the `TimeLabelGlyphs` pattern from
-  [[diagonal-linear]]) with $x_0$ typeset once per curve — or, with `show x0 values`
-  off, the symbol $(x_0)$ (one shared piece) instead of the coordinates;
-- a red **tangent vector** out of each single's head — $\dot{x} = f(x)$ evaluated there,
+  [[diagonal-linear]]) with $v_0$ typeset once per curve — or, with `show v0 values`
+  off, the symbol $(v_0)$ (one shared piece) instead of the coordinates;
+- a red **tangent vector** out of each single's head — $\dot{v} = f(v)$ evaluated there,
   rebuilt every frame (`rebuildTangents()`) into two small dynamic [[Mesh]] buffers with
   the glyph `pushArrow`, at constant on-screen size (`length` × camera distance in R3,
   × view half-height in R2, capped in world units — 0.3 `domain radius` in R3, 2 in R2 —
-  so zooming out never grows it past the scene) — labelled $\dot{x}$, placed just beyond the tip along the
+  so zooming out never grows it past the scene) — labelled $\dot{v}$, placed just beyond the tip along the
   arrow's screen direction. When the arrow points up on screen the $\phi^t$ label
   moves below the particle, so the two never cross.
 
@@ -106,7 +106,7 @@ and distance.
 - [[Expression]] — under [[VectorField]]: `evalReal` for the flow, `latex` for display.
 - [[Integrator]] — Euler/RK2/RK4 with `maxStep` substepping, reverse time.
 - [[Trajectory]] — one per curve: state, trail, `drawHead()`, `time()` for $\phi^t$.
-- [[LatexImage]] — the $\dot{x} = f(x)$ overlay and the $\phi^t(x_0)$ label pieces.
+- [[LatexImage]] — the $\dot{v} = f(v)$ overlay and the $\phi^t(v_0)$ label pieces.
 - [[Shader]] — one program (same pair as [[diagonal-linear]]).
 - [[ArrowGlyphs]] — the glyph grid (R2: level + fading finer level), the red tangent arrows.
 - [[Mesh]] — static axes.
@@ -121,16 +121,16 @@ and distance.
   seed lands just in front of the camera, under the cursor.
 
 ## Controls / uniforms
-**Other settings → LaTeX**: `equation` (the $\dot x = f(x)$ overlay) and `labels` ($\phi^t(x_0)$ and $\dot x$) sizes in px, saved per mode.
+**Other settings → LaTeX**: `equation` (the $\dot v = f(v)$ overlay) and `labels` ($\phi^t(v_0)$ and $\dot v$) sizes in px, saved per mode.
 Red `sectionHeader()` titles: **Vector field** (R2/R3, `dx/dt`… boxes + Apply/Enter,
 presets, red parse error — the previous field keeps drawing, syntax help, field time) ·
-**LaTeX overlays** (`show x' = f(x)`, `label singles with phi^t(x0)`) · **Flow**
+**LaTeX overlays** (`show v' = f(v)`, `label singles with phi^t(v0)`) · **Flow**
 (Play/Pause — also **Space**, ignored while typing in a field; arrow keys via
 [[FlowKeys]]: Up/Down speed on a logarithmic ramp down to $10^{-4}$ — a decade per 1.2 s held —, Left reverse, Right forward; `speed` is a logarithmic slider from $10^{-4}$ — `reverse`, `Restart` — every curve back to its seed at the current field
 time, `Clear all` (also key **R**), `speed`, count + how many blew up) · **Disk / Ball of trajectories**
 (`center`, `radius`, `particles`, `fill disk/volume`, Drop — also key **B**; **V** drops one with a single at its centre under the cursor, where a click would seed, sized to the view (a fixed fraction of the visible half-height at that depth); V's balls stack up to 3 (`kMaxBalls`), the oldest — with its centre single — going when a fourth is dropped, while B and the button still replace; replaces the previous —
 / Remove) · **Single trajectories** (click the view; `click depth` in R3,
-`singles thickness`, `label size`, `show x0 values`, `tangent vector x'` + `length`, `Clear singles`;
+`singles thickness`, `label size`, `show v0 values`, `tangent vector v'` + `length`, `Clear singles`;
 `camera`/`view follows a single` (also a tap of key **1** — switching off this way leaves the camera where it is; holding 1 glides to the home view — R2 through `updateViewEase`, the window's own smootherstep, cancelled by any pan/zoom key) + `newest` / `follow #`) · collapsed **Other settings** (camera and integrator first):
 Arrow field (show arrows — also key **2**, fades in/out — /axes, `grid N`, `arrow scale`, head solid/barbs + length/width,
 `length by magnitude`, `hide below`, `domain radius` (R3), alpha + `alpha gradient`,

@@ -152,7 +152,7 @@ struct Settings {
 
     float spawnDepth = 0.3f;      // click seeds: fraction of camera -> orbit center
     float singleScale = 2.0f;
-    bool showTimeLabels = true;   // phi^t(x_0) above every single
+    bool showTimeLabels = true;   // phi^t(v_0) above every single
     float timeLabelSize = 36.0f;
 
     bool showTrails = true;
@@ -286,7 +286,7 @@ void loadSettingsFile(Settings& s, const char* path)
 // The global picture of the Lorenz flow: arrow field, balls and singles of
 // trajectories, and the equilibria as red beads — hover one for its linearization,
 // click it to ease the camera onto it. Mode 1 of the Hartman-Grobman track; the
-// local picture inside a ball around x* is the separate lorenz_equilibrium sim.
+// local picture inside a ball around v* is the separate lorenz_equilibrium sim.
 // See obsidian_twin/sims/lorenz-flow.md.
 class LorenzFlowSim : public engine::Sim {
 public:
@@ -321,7 +321,7 @@ public:
         cam.orbitSlowZone = 0.0f;
         cam.farPlane = std::max(500.0f, 20.0f * cfg.domainR);
 
-        // back from lorenz_equilibrium: same parameters, the camera still on x*, then
+        // back from lorenz_equilibrium: same parameters, the camera still on v*, then
         // the eased zoom out to the global view it was entered from
         const engine::App::Handoff& in = app.handoff();
         auto value = [&](const char* key, double fallback) {
@@ -648,12 +648,12 @@ private:
         int ball = -1;                 // drop id of the ball it belongs to (-1: none)
     };
 
-    // Pieces of the \phi^t(x_0) label, each typeset once and re-composed every frame, so
+    // Pieces of the \phi^t(v_0) label, each typeset once and re-composed every frame, so
     // a t that changes every frame costs no typesetting (as in vector_field).
     struct TimeLabelGlyphs {
         float size = 0.0f;
         engine::LatexImage phi;
-        engine::LatexImage seedSymbol;   // (x_0)
+        engine::LatexImage seedSymbol;   // (v_0)
         engine::LatexImage chars[12];    // superscript pieces, in kTimeLabelChars order
     };
     static constexpr const char* kTimeLabelChars = "0123456789.-";
@@ -697,7 +697,7 @@ private:
             changed = true;
         }
         ImGui::SameLine();
-        ImGui::Checkbox("show x' = f(x)", &cfg.showSystemLatex);
+        ImGui::Checkbox("show v' = f(v)", &cfg.showSystemLatex);
         if (changed)
             applyParams();
         ImGui::TextDisabled("field time t = %.3f", fieldTime);
@@ -736,7 +736,7 @@ private:
         ImGui::Checkbox("labels", &cfg.showEqLabels);
     }
 
-    // Sizes of everything typeset: the system top-right, the O / C+- labels, phi^t(x0).
+    // Sizes of everything typeset: the system top-right, the O / C+- labels, phi^t(v0).
     void drawLatexUI()
     {
         sectionHeader("LaTeX");
@@ -800,7 +800,7 @@ private:
         ImGui::SliderFloat("click depth", &cfg.spawnDepth, 0.05f, 1.0f,
                            "%.2f of the way to the orbit center");
         ImGui::SliderFloat("singles thickness", &cfg.singleScale, 1.0f, 4.0f, "%.1f x");
-        ImGui::Checkbox("label with phi^t(x0)", &cfg.showTimeLabels);
+        ImGui::Checkbox("label with phi^t(v0)", &cfg.showTimeLabels);
         if (ImGui::Button("Clear singles"))
             removeKind(Kind::Single);
         ImGui::SameLine();
@@ -997,7 +997,7 @@ private:
         return true;
     }
 
-    // Ease the orbit centre onto x* and the distance down to zoomRadius. The global
+    // Ease the orbit centre onto v* and the distance down to zoomRadius. The global
     // view is remembered on the way in, so "back" returns exactly where you were.
     void focusOn(int i)
     {
@@ -1014,7 +1014,7 @@ private:
         startTween(eqs[i].pos, cfg.zoomRadius);
     }
 
-    // The zoom onto a bead has landed: switch to lorenz_equilibrium at x*, handing it
+    // The zoom onto a bead has landed: switch to lorenz_equilibrium at v*, handing it
     // the parameters, the bead's look and the global view to come back to. The camera
     // is shared and left where it is, so the switch shows no jump.
     void handOff()
@@ -1269,7 +1269,7 @@ private:
 
     // ---- overlays -------------------------------------------------------------------
 
-    // \phi^t(x_0) above every single: the flow map for the ODE time integrated since it
+    // \phi^t(v_0) above every single: the flow map for the ODE time integrated since it
     // was dropped (negative when running in reverse). Same composition as vector_field.
     void drawTimeLabels()
     {
@@ -1282,7 +1282,7 @@ private:
             // TeX proportions: superscripts at scriptstyle (0.7) raised ~0.42 em
             g.size = S;
             g.phi.set(R"(\phi)", S, kSingleColor);
-            g.seedSymbol.set(R"((x_0))", S, kSingleColor);
+            g.seedSymbol.set(R"((v_0))", S, kSingleColor);
             for (int i = 0; i < 12; ++i)
             {
                 char ch = kTimeLabelChars[i];
@@ -1304,7 +1304,7 @@ private:
             char num[32];
             std::snprintf(num, sizeof(num), "%.2f", t);
 
-            // one baseline: \phi, raised digits, (x_0)
+            // one baseline: \phi, raised digits, (v_0)
             const engine::LatexImage* pieces[40];
             float xs[40], ys[40];
             int n = 0;

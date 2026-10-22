@@ -51,7 +51,9 @@ const glm::vec3 kBallColor(1.0f);
 const glm::vec3 kSingleColor = {0.35f, 0.95f, 0.45f};
 // seeds spawned on a circle in E^s: a lighter stable blue, so they read as "on E^s"
 const glm::vec3 kManifoldColor = {0.60f, 0.72f, 1.0f};
-// x' = Ax at a single's head
+// ... and on a circle (or segment) in E^u: a lighter unstable red
+const glm::vec3 kManifoldUColor = {1.0f, 0.62f, 0.58f};
+// v' = Av at a single's head
 const glm::vec3 kTangentColor = {1.0f, 0.22f, 0.18f};
 
 // UI section title: a red labelled separator with breathing room above, so the long
@@ -81,7 +83,7 @@ std::string texNumber(float v)
 
 const char* kSettingsPath = SIMS_DIR "diagonal_linear/settings.txt";
 
-// The diagonal linear system x' = diag(l1, l2, l3) x on R3: arrow glyphs, the stable
+// The diagonal linear system v' = diag(l1, l2, l3) v on R3: arrow glyphs, the stable
 // (blue) and unstable (red) eigenspaces, and balls of trajectories dropped into the
 // flow. See obsidian_twin/sims/diagonal-linear.md.
 class DiagonalLinearSim : public engine::Sim {
@@ -184,6 +186,8 @@ public:
         app->camera().speed = std::max(1.0f, domainR);
         followCamera(dt);
 
+        if (reverse != subspacesReversed)
+            flipStability();
         if (subspacesDirty)
             rebuildSubspaces();
         if (arrowsDirty)
@@ -373,8 +377,8 @@ public:
 
 private:
     // Ball: the one ball of seeds. Single: click-dropped, drawn fatter and labelled.
-    // Manifold: the circle of seeds spawned in E^s.
-    enum class Kind { Ball, Single, Manifold };
+    // Manifold / ManifoldU: the circle of seeds spawned in E^s / E^u.
+    enum class Kind { Ball, Single, Manifold, ManifoldU };
 
     struct Curve {
         std::unique_ptr<engine::Trajectory> traj;
@@ -389,7 +393,7 @@ private:
         int ball = -1;                 // drop id of the ball it belongs to (-1: none)
     };
 
-    // Pieces of the \phi^t(x_0) label, each typeset once: the label is re-composed
+    // Pieces of the \phi^t(v_0) label, each typeset once: the label is re-composed
     // from them every frame, so a t that changes every frame costs no typesetting
     // (a full re-typeset measured ~3 ms in Debug — per single, per frame).
     struct TimeLabelGlyphs {
@@ -408,7 +412,7 @@ private:
 
     // ---- UI -----------------------------------------------------------------
 
-    // Sizes of everything typeset: the equation, the phi^t labels (and x'), E^s/E^u/E^c.
+    // Sizes of everything typeset: the equation, the phi^t labels (and v'), E^s/E^u/E^c.
     void drawLatexUI()
     {
         sectionHeader("LaTeX");
@@ -483,7 +487,7 @@ private:
         }
     }
 
-    // \phi^t(x_0) above every single (click-dropped) particle, with x_0 written out as
+    // \phi^t(v_0) above every single (click-dropped) particle, with v_0 written out as
     // the actual seed: the flow map applied to it for the ODE time integrated so far —
     // t = 0 at the seed, negative when running in reverse. Composed per frame from
     // TimeLabelGlyphs plus the per-curve seed image.
@@ -531,7 +535,7 @@ private:
             char num[32];
             std::snprintf(num, sizeof(num), "%.2f", t);
 
-            // lay the pieces out along one baseline: \phi, raised digits, (x0 values)
+            // lay the pieces out along one baseline: \phi, raised digits, (v0 values)
             const engine::LatexImage* pieces[40];
             float xs[40], ys[40];
             int n = 0;
@@ -565,7 +569,7 @@ private:
         }
     }
 
-    // x' = Ax with the live A, typeset top-right. Re-typeset only when a lambda moved.
+    // v' = Av with the live A, typeset top-right. Re-typeset only when a lambda moved.
     void drawSystemOverlay()
     {
         if (!showSystemLatex)
@@ -575,10 +579,10 @@ private:
             std::copy(lambda, lambda + 3, latexLambda);
             auto num = texNumber;
             std::string tex =
-                R"(\dot{x} = \begin{pmatrix})" +
+                R"(\dot{v} = \begin{pmatrix})" +
                 num(lambda[0]) + R"( & 0 & 0 \\ 0 & )" + num(lambda[1]) +
                 R"( & 0 \\ 0 & 0 & )" + num(lambda[2]) +
-                R"(\end{pmatrix} \begin{pmatrix} x_1 \\ x_2 \\ x_3 )";
+                R"(\end{pmatrix} \begin{pmatrix} x \\ y \\ z \end{pmatrix})";
             systemLatex.set(tex, systemLatexSize);
         }
         if (systemLatex.empty())
@@ -602,7 +606,7 @@ private:
     void drawSystemUI()
     {
         sectionHeader("System");
-        ImGui::TextUnformatted("x' = diag(l1, l2, l3) x");
+        ImGui::TextUnformatted("v' = diag(l1, l2, l3) v");
         bool changed = false;
         const char* labels[3] = {"l1 (x)", "l2 (y)", "l3 (z)"};
         for (int i = 0; i < 3; ++i)
@@ -628,17 +632,17 @@ private:
         }
 
         int ds = 0, du = 0, dc = 0;
-        for (float l : lambda)
-            (isCenter(l) ? dc : (l < 0.0f ? ds : du))++;
+        for (int i = 0; i < 3; ++i)
+            (isCenter(lambda[i]) ? dc : (flowLambda(i) < 0.0f ? ds : du))++;
         ImGui::Text("dim E^s = %d   dim E^u = %d   dim E^c = %d", ds, du, dc);
     }
 
     void drawOverlayUI()
     {
         sectionHeader("LaTeX overlays");
-        ImGui::Checkbox("show x' = Ax", &showSystemLatex);
+        ImGui::Checkbox("show v' = Av", &showSystemLatex);
         ImGui::SameLine();
-        ImGui::Checkbox("label singles with phi^t(x0)", &showTimeLabels);
+        ImGui::Checkbox("label singles with phi^t(v0)", &showTimeLabels);
         if (!systemLatex.error().empty())
             ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "LaTeX: %s",
                                systemLatex.error().c_str());
@@ -778,7 +782,7 @@ private:
         ImGui::SliderFloat("click depth", &spawnDepth, 0.05f, 1.0f,
                            "%.2f of the way to the orbit center");
         ImGui::SliderFloat("singles thickness", &singleScale, 1.0f, 4.0f, "%.1f x");
-        ImGui::Checkbox("tangent vector x'", &showTangents);
+        ImGui::Checkbox("tangent vector v'", &showTangents);
         if (showTangents)
         {
             ImGui::SameLine();
@@ -818,23 +822,32 @@ private:
         ImGui::SliderFloat("particle size", &particleSize, 2.0f, 20.0f);
     }
 
-    // Seeds on a circle of radius r around the origin inside E^s. The system is
-    // diagonal, so a seed with zero unstable/center components keeps them zero forever:
-    // these curves stay in E^s and visibly shrink into the origin.
+    // Seeds on a circle of radius r around the origin inside E^s or E^u. The system is
+    // diagonal, so a seed with zero components off the subspace keeps them zero forever:
+    // these curves stay in E^s (shrinking into the origin) or E^u (spreading out of it).
     void drawManifoldCircleUI()
     {
-        sectionHeader("Circle in the stable subspace E^s");
+        sectionHeader("Circles in E^s and E^u");
         std::vector<int> stable = stableAxes();
+        std::vector<int> unstable = unstableAxes();
         ImGui::SliderFloat("circle radius", &manifoldRadius, 0.1f, 20.0f, "%.2f");
         ImGui::SliderInt("circle particles", &manifoldCount, 2, 200);
 
         ImGui::BeginDisabled(stable.empty());
         if (ImGui::Button("Spawn circle in E^s"))
-            spawnManifoldCircle();
+            spawnManifoldCircle(true);
         ImGui::EndDisabled();
         ImGui::SameLine();
-        if (ImGui::Button("Remove circle"))
+        ImGui::BeginDisabled(unstable.empty());
+        if (ImGui::Button(unstable.size() == 1 ? "Spawn segment in E^u" : "Spawn circle in E^u"))
+            spawnManifoldCircle(false);
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button("Remove circles"))
+        {
             removeKind(Kind::Manifold);
+            removeKind(Kind::ManifoldU);
+        }
 
         if (stable.empty())
             ImGui::TextDisabled("no stable directions (no lambda < 0)");
@@ -848,7 +861,24 @@ private:
 
     static bool isCenter(float l) { return std::abs(l) < 1e-4f; }
 
-    // E^s, E^u, E^c are spanned by the coordinate axes whose eigenvalue is negative,
+    // The eigenvalue as the flow runs: reversed time is the flow of -A, so E^s and E^u
+    // trade places (colors, labels, cones, which circle is which).
+    float flowLambda(int i) const { return reverse ? -lambda[i] : lambda[i]; }
+
+    // reverse toggled: rebuild the subspaces and recolor the circles already spawned
+    void flipStability()
+    {
+        subspacesReversed = reverse;
+        subspacesDirty = true;
+        for (Curve& c : curves)
+            if (c.kind == Kind::Manifold || c.kind == Kind::ManifoldU)
+            {
+                c.kind = c.kind == Kind::Manifold ? Kind::ManifoldU : Kind::Manifold;
+                c.color = c.kind == Kind::Manifold ? kManifoldColor : kManifoldUColor;
+            }
+    }
+
+    // E^s, E^u, E^c are spanned by the coordinate axes whose eigenvalue (flowLambda) is negative,
     // positive, zero. Each becomes axis lines, plus a translucent square when it is a
     // plane, or the edges of a cube when it is all of R3.
     void rebuildSubspaces()
@@ -877,7 +907,7 @@ private:
             std::vector<int> span;
             for (int i = 0; i < 3; ++i)
             {
-                int k = isCenter(lambda[i]) ? 2 : (lambda[i] < 0.0f ? 0 : 1);
+                int k = isCenter(lambda[i]) ? 2 : (flowLambda(i) < 0.0f ? 0 : 1);
                 if (k == kind)
                     span.push_back(i);
             }
@@ -1032,7 +1062,7 @@ private:
         cam.position = cam.orbitCenter + offset;
     }
 
-    // A red x' = Ax arrow out of every single's head, at constant on-screen size (a
+    // A red v' = Av arrow out of every single's head, at constant on-screen size (a
     // fraction of the camera distance). Rebuilt every frame — a handful of arrows.
     void rebuildTangents()
     {
@@ -1067,7 +1097,7 @@ private:
         tangents.upload();
     }
 
-    // \dot{x} just beyond each tangent arrow's tip, continuing the arrow's on-screen
+    // \dot{v} just beyond each tangent arrow's tip, continuing the arrow's on-screen
     // direction so it never sits on the arrowhead; phi-label size, typeset once.
     void drawTangentLabels()
     {
@@ -1076,7 +1106,7 @@ private:
         if (tangentLabelSize != timeLabelSize)
         {
             tangentLabelSize = timeLabelSize;
-            tangentLabel.set(R"(\dot{x})", timeLabelSize, kTangentColor);
+            tangentLabel.set(R"(\dot{v})", timeLabelSize, kTangentColor);
         }
         for (const Curve& c : curves)
         {
@@ -1141,28 +1171,50 @@ private:
     {
         std::vector<int> axes;
         for (int i = 0; i < 3; ++i)
-            if (!isCenter(lambda[i]) && lambda[i] < 0.0f)
+            if (!isCenter(lambda[i]) && flowLambda(i) < 0.0f)
                 axes.push_back(i);
         return axes;
     }
 
-    // Replaces the previous circle. In a 2D (or 3D) E^s the seeds are evenly spaced on
-    // the circle spanned by the first two stable axes; in a 1D E^s the circle is S^0,
-    // the two points at +-r.
-    void spawnManifoldCircle()
+    std::vector<int> unstableAxes() const
     {
-        removeKind(Kind::Manifold);
-        std::vector<int> axes = stableAxes();
+        std::vector<int> axes;
+        for (int i = 0; i < 3; ++i)
+            if (!isCenter(lambda[i]) && flowLambda(i) > 0.0f)
+                axes.push_back(i);
+        return axes;
+    }
+
+    // Replaces the previous circle in that subspace. In a 2D (or 3D) subspace the seeds
+    // are evenly spaced on the circle spanned by its first two axes. In a 1D E^s the
+    // circle is S^0, the two points at +-r; in a 1D E^u it is the segment [-r, r],
+    // evenly spaced, so the flow visibly stretches it.
+    void spawnManifoldCircle(bool stable)
+    {
+        const Kind kind = stable ? Kind::Manifold : Kind::ManifoldU;
+        const glm::vec3 color = stable ? kManifoldColor : kManifoldUColor;
+        removeKind(kind);
+        std::vector<int> axes = stable ? stableAxes() : unstableAxes();
         if (axes.empty())
             return;
 
-        if (axes.size() == 1)
+        if (axes.size() == 1 && stable)
         {
             for (float side : {1.0f, -1.0f})
             {
                 glm::vec3 p(0.0f);
                 p[axes[0]] = side * manifoldRadius;
-                addTrajectory(p, kManifoldColor, Kind::Manifold);
+                addTrajectory(p, color, kind);
+            }
+            return;
+        }
+        if (axes.size() == 1)
+        {
+            for (int k = 0; k < manifoldCount; ++k)
+            {
+                glm::vec3 p(0.0f);
+                p[axes[0]] = manifoldRadius * (2.0f * (float)k / (float)(manifoldCount - 1) - 1.0f);
+                addTrajectory(p, color, kind);
             }
             return;
         }
@@ -1173,7 +1225,7 @@ private:
             glm::vec3 p(0.0f);
             p[axes[0]] = manifoldRadius * std::cos(th);
             p[axes[1]] = manifoldRadius * std::sin(th);
-            addTrajectory(p, kManifoldColor, Kind::Manifold);
+            addTrajectory(p, color, kind);
         }
     }
 
@@ -1464,12 +1516,12 @@ private:
     engine::ArrowGlyphs glyphs;          // the field's arrow grid
 
     float lambda[3] = {1.0f, -1.0f, -2.0f};
-    engine::LatexImage systemLatex;           // x' = Ax overlay, top-right
+    engine::LatexImage systemLatex;           // v' = Av overlay, top-right
     float latexLambda[3] = {NAN, NAN, NAN};   // lambdas systemLatex was typeset for
     bool showSystemLatex = true;
-    bool showTimeLabels = true;               // \phi^t(x_0) above single particles
+    bool showTimeLabels = true;               // \phi^t(v_0) above single particles
     float timeLabelSize = 36.0f;
-    float systemLatexSize = 34.0f;            // the x' = Ax overlay, px
+    float systemLatexSize = 34.0f;            // the v' = Av overlay, px
     TimeLabelGlyphs timeGlyphs;
     engine::Integrator integrator;
     int method = 2;                   // Integrator::Method, RK4
@@ -1482,6 +1534,7 @@ private:
     bool showSubspaces = true;
     bool showAxes = true;
     bool subspacesDirty = true;
+    bool subspacesReversed = false;   // reverse as the subspaces were last built
     float subspaceExtent = 3.0f;
     float planeAlpha = 0.15f;
     float subspaceLineWidth = 3.0f;
@@ -1533,8 +1586,8 @@ private:
     // tangent arrows on singles (rebuilt every frame) + the follow camera
     bool showTangents = true;
     float tangentSize = 0.12f;       // fraction of the camera distance
-    engine::ArrowGlyphs tangents;    // x' arrows
-    engine::LatexImage tangentLabel; // \dot{x}
+    engine::ArrowGlyphs tangents;    // v' arrows
+    engine::LatexImage tangentLabel; // \dot{v}
     float tangentLabelSize = 0.0f;
     bool followSingle = false;
     bool followNewest = true;
@@ -1548,7 +1601,7 @@ private:
     // saved orbit view (see captureCamera / applySavedCamera); NaN until saved
     float camTheta = NAN, camPhi = NAN, camRadius = NAN;
     float camCenter[3] = {0.0f, 0.0f, 0.0f};
-    float manifoldRadius = 5.0f;     // E^s circle
+    float manifoldRadius = 5.0f;     // E^s / E^u circle
     int manifoldCount = 48;
     float ballCenter[3] = {1.0f, 1.0f, 1.0f};
     float ballRadius = 0.4f;

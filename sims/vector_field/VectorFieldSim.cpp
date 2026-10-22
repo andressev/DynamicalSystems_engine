@@ -61,7 +61,7 @@ const Preset kPresets3D[] = {
 const glm::vec3 kBallColor(1.0f);
 const glm::vec3 kSingleColor = {0.35f, 0.95f, 0.45f};   // click-dropped: always green
 const glm::vec3 kDivergedColor = {0.95f, 0.25f, 0.25f}; // a head that blew up
-const glm::vec3 kTangentColor = {1.0f, 0.22f, 0.18f};   // x' = f(x) at a single's head
+const glm::vec3 kTangentColor = {1.0f, 0.22f, 0.18f};   // v' = f(v) at a single's head
 
 const char* kSettingsPath2D = SIMS_DIR "vector_field/settings_2d.txt";
 const char* kSettingsPath3D = SIMS_DIR "vector_field/settings_3d.txt";
@@ -102,7 +102,7 @@ struct Settings {
 
     bool showSystemLatex = true;
     bool showTimeLabels = true;
-    float systemLatexSize = 30.0f;  // the x' = f(x) overlay, px
+    float systemLatexSize = 30.0f;  // the v' = f(v) overlay, px
 
     bool showArrows = true;
     bool showAxes = true;
@@ -133,8 +133,8 @@ struct Settings {
     float spawnDepth = 0.3f;      // R3 click seeds: fraction of camera -> orbit center
     float singleScale = 2.0f;     // singles' trail width and head size multiplier
     float timeLabelSize = 36.0f;
-    bool showSeedValues = true;   // phi^t((1, 2)) vs. the symbol phi^t(x_0)
-    bool showTangents = true;     // red x' arrow on every single
+    bool showSeedValues = true;   // phi^t((1, 2)) vs. the symbol phi^t(v_0)
+    bool showTangents = true;     // red v' arrow on every single
     float tangentSize = 0.12f;    // of the camera distance (R3) / view half-height (R2)
     bool followSingle = false;    // R3: the orbit camera tracks a single
     bool followNewest = true;     // ...the most recently dropped one
@@ -296,7 +296,7 @@ void loadSettingsFile(Settings& s, const char* path)
 
 // ---- the sim --------------------------------------------------------------------
 
-// Any typed vector field on R2 or R3: arrow glyphs, x' = f(x) typeset from the field
+// Any typed vector field on R2 or R3: arrow glyphs, v' = f(v) typeset from the field
 // itself, a ball of trajectories and click-dropped singles labelled phi^t(seed).
 // See obsidian_twin/sims/vector-field.md.
 class VectorFieldSim : public engine::Sim {
@@ -658,7 +658,7 @@ private:
     struct TimeLabelGlyphs {
         float size = 0.0f;
         engine::LatexImage phi;
-        engine::LatexImage seedSymbol; // (x_0), when the seed's values are hidden
+        engine::LatexImage seedSymbol; // (v_0), when the seed's values are hidden
         engine::LatexImage chars[12];  // superscript pieces, in kTimeLabelChars order
     };
     static constexpr const char* kTimeLabelChars = "0123456789.-";
@@ -720,9 +720,9 @@ private:
     void drawOverlayUI()
     {
         sectionHeader("LaTeX overlays");
-        ImGui::Checkbox("show x' = f(x)", &cfg.showSystemLatex);
+        ImGui::Checkbox("show v' = f(v)", &cfg.showSystemLatex);
         ImGui::SameLine();
-        ImGui::Checkbox("label singles with phi^t(x0)", &cfg.showTimeLabels);
+        ImGui::Checkbox("label singles with phi^t(v0)", &cfg.showTimeLabels);
         if (!systemLatex.error().empty())
             ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "LaTeX: %s",
                                systemLatex.error().c_str());
@@ -787,10 +787,10 @@ private:
             ImGui::SliderFloat("click depth", &cfg.spawnDepth, 0.05f, 1.0f,
                                "%.2f of the way to the orbit center");
         ImGui::SliderFloat("singles thickness", &cfg.singleScale, 1.0f, 4.0f, "%.1f x");
-        ImGui::Checkbox("show x0 values", &cfg.showSeedValues);
+        ImGui::Checkbox("show v0 values", &cfg.showSeedValues);
         ImGui::SameLine();
-        ImGui::TextDisabled(cfg.showSeedValues ? "phi^t(1, 2)" : "phi^t(x0)");
-        ImGui::Checkbox("tangent vector x'", &cfg.showTangents);
+        ImGui::TextDisabled(cfg.showSeedValues ? "phi^t(1, 2)" : "phi^t(v0)");
+        ImGui::Checkbox("tangent vector v'", &cfg.showTangents);
         if (cfg.showTangents)
         {
             ImGui::SameLine();
@@ -903,7 +903,7 @@ private:
     }
 
     // Sizes of everything typeset: the equation top-right, and the labels on singles
-    // (phi^t(x0) and the x' tangent label share one size).
+    // (phi^t(v0) and the v' tangent label share one size).
     void drawLatexUI()
     {
         sectionHeader("LaTeX");
@@ -1036,7 +1036,7 @@ private:
         cam.position = cam.orbitCenter + offset;
     }
 
-    // A red x' = f(x) arrow out of every single's head, direction of the flow there.
+    // A red v' = f(v) arrow out of every single's head, direction of the flow there.
     // Constant size on screen: a fraction of the camera distance (R3) or of the view
     // half-height (R2). Rebuilt every frame — a handful of arrows.
     void rebuildTangents()
@@ -1075,7 +1075,7 @@ private:
         tangents.upload();
     }
 
-    // \dot{x} just beyond each tangent arrow's tip, continuing the arrow's on-screen
+    // \dot{v} just beyond each tangent arrow's tip, continuing the arrow's on-screen
     // direction, so it never sits on the arrowhead. Same size as the phi label, red,
     // typeset once.
     void drawTangentLabels()
@@ -1086,7 +1086,7 @@ private:
         if (tangentLabelSize != size)
         {
             tangentLabelSize = size;
-            tangentLabel.set(R"(\dot{x})", size, kTangentColor);
+            tangentLabel.set(R"(\dot{v})", size, kTangentColor);
         }
         for (const Curve& c : curves)
         {
@@ -1123,7 +1123,7 @@ private:
         return true;
     }
 
-    // x' = f(x) top-right, typeset from the parsed field itself (Expression::latex), so
+    // v' = f(v) top-right, typeset from the parsed field itself (Expression::latex), so
     // it shows exactly what is being integrated. Re-typeset only when the field changes.
     void drawSystemOverlay()
     {
@@ -1175,7 +1175,7 @@ private:
             // TeX proportions: superscripts at scriptstyle (0.7) raised ~0.42 em
             g.size = S;
             g.phi.set(R"(\phi)", S, kSingleColor);
-            g.seedSymbol.set(R"((x_0))", S, kSingleColor);
+            g.seedSymbol.set(R"((v_0))", S, kSingleColor);
             for (int i = 0; i < 12; ++i)
             {
                 char ch = kTimeLabelChars[i];
@@ -1656,12 +1656,12 @@ private:
     std::mt19937 rng{1234};
     engine::TrajectoryRunner runner;  // advances the curves, times integrate/upload/draw
 
-    engine::LatexImage systemLatex;   // x' = f(x), top-right
+    engine::LatexImage systemLatex;   // v' = f(v), top-right
     bool latexDirty = true;
     TimeLabelGlyphs timeGlyphs;
 
-    engine::ArrowGlyphs tangents;      // x' arrows on singles, rebuilt every frame
-    engine::LatexImage tangentLabel;   // \dot{x}
+    engine::ArrowGlyphs tangents;      // v' arrows on singles, rebuilt every frame
+    engine::LatexImage tangentLabel;   // \dot{v}
     float tangentLabelSize = 0.0f;
     bool following = false;            // the camera is currently tracking a single
     const engine::Trajectory* followedTraj = nullptr; // identity of the followed single

@@ -43,7 +43,7 @@ public:
     double magnitude(const double* x, double t) const;
 
     // Each component typeset as LaTeX (Expression::latex over x, y[, z], t) — for a
-    // sim's on-screen x' = f(x). Empty while invalid.
+    // sim's on-screen v' = f(v). Empty while invalid.
     std::vector<std::string> latex() const;
 
 private:

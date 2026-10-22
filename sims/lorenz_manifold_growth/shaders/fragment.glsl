@@ -9,7 +9,7 @@ uniform int u_useRamp;     // 1 = color by magnitude, 0 = flat u_color
 uniform vec3 u_color;
 uniform float u_alpha;     // overall opacity of this draw
 uniform float u_alphaTail; // opacity multiplier at the faded end (vFade = 0)
-uniform int u_round;       // 1 = points are shaded discs instead of squares
+uniform int u_round;       // 1 = points are shaded discs instead of squares, 2 = soft glow
 
 // Same cold-to-hot ramp as vector_field: slow reads blue, fast reads red.
 vec3 ramp(float s)
@@ -45,6 +45,17 @@ void main()
                                     normalize(vec3(-0.4, 0.5, 0.75))) * 0.45,
                               0.0, 1.0);
         rgb *= 0.55 + 0.65 * lambert;
+    }
+    else if (u_round == 2)
+    {
+        // an additive halo: a gaussian of the color, lifted toward white at the core
+        vec2 d = gl_PointCoord - vec2(0.5);
+        float r2 = dot(d, d) * 4.0;
+        if (r2 > 1.0)
+            discard;
+        float g = exp(-5.0 * r2);
+        rgb = mix(rgb, vec3(1.0), 0.4 * g);
+        alpha *= g;
     }
 
     FragColor = vec4(rgb, alpha);

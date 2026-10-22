@@ -21,14 +21,14 @@ parameters — the triangle mesh it is drawn with (vertices in yellow), and a ch
 point $r$ with its half-plane $\mathcal{F}_r$.
 
 ## What is being simulated
-Nothing moves yet. The patch $x^* + K(\theta)$ of the parametrization method
+Nothing moves yet. The patch $v^* + K(\theta)$ of the parametrization method
 ([[lorenz-stable-manifold]], [[InvariantManifold]]) out to the trusted radius, exactly
 as [[lorenz-manifold-growth]] draws it, with its bead. **Show mesh** (or **M**) fades in
-the mesh the surface really is: $x^*$, `rings` rings of `vertices per ring` points
-$x^* + K(\theta)$ with $\theta$ on circles of radius $r\,i/\text{rings}$ in $E$, the
+the mesh the surface really is: $v^*$, `rings` rings of `vertices per ring` points
+$v^* + K(\theta)$ with $\theta$ on circles of radius $r\,i/\text{rings}$ in $E$, the
 triangles between them as edges, every vertex as a yellow dot. The rings are evenly
 spaced in $\theta$, not by distance on the surface, so on screen they bunch up near
-$x^*$ and spread out toward the edge.
+$v^*$ and spread out toward the edge.
 
 **The edge follows the method's spacing rule** (`spreadEdge`): the `rings` - 1 inner
 rings keep `segs` even angles, but the edge starts from `segs` even angles and then,
@@ -65,13 +65,13 @@ switches, so lorenz_manifold_growth gets a world-up camera. Saved camera angles 
 world axes (`worldAngles`); the destructor restores world-up on the shared camera.
 
 **The edge ball and its particles.** A green ball sits on the true edge
-$x^* + K(r(\cos a\, e_0 + \sin a\, e_1))$ (`edgePoint`, not the mesh's polygon). Press
+$v^* + K(r(\cos a\, e_0 + \sin a\, e_1))$ (`edgePoint`, not the mesh's polygon). Press
 and drag slides it along the edge (`slideBall`): the cursor is projected onto each
 segment between edge samples (`kEdgeSamples`) within `kBallStep` of the ball's current
 angle, so the ball moves continuously and never leaps to another stretch of the edge
 that passes near the cursor on screen. A click — released before the mouse moves `kBallDragPixels` (4 px) — or **Launch** starts a particle there,
 integrated with the [[TaylorIntegrator]] in the manifold's own direction of time —
-**backward on $W^s$** (into the past, away from $x^*$), forward on $W^u$. Arrows set the
+**backward on $W^s$** (into the past, away from $v^*$), forward on $W^u$. Arrows set the
 speed (log ramp, $10^{-6}$ to 1 field time per second, default $5 \cdot 10^{-4}$: the
 step past the edge is small) and flip the direction against that; **Space** pauses,
 **R** clears. From a press on the ball until its release the mouse is the ball's (`ballPressed`), so it never picks or solves at an edge vertex — not even when the dragged ball slides out from under the cursor.
@@ -90,7 +90,7 @@ follows it along the edge, keeping its angular offset from $r$, so the next shot
 the same stretch from the new $r$.
 
 **Where a particle meets $\mathcal{F}_r$.** Each step, `findHit` checks whether the
-particle crossed $\mathcal{F}_r$: a strict sign change of $(x - r)\cdot n$ between the
+particle crossed $\mathcal{F}_r$: a strict sign change of $(v - r)\cdot n$ between the
 state before and after the step, on the outer half ($(b - r)\cdot\text{out} \ge 0$; the
 plane is taken as the whole half-plane, not just its drawn part). The crossing is
 interpolated inside the step in double precision (the step is tiny, so the chord is the
@@ -170,7 +170,7 @@ its scene fades in.
 the 2-D side: the one handed over, else whichever is a surface. The radius is the
 smaller trusted radius of the two sides (the same bisection on `maxRelDefect`), so it
 is the growth sim's radius. `buildMesh` fills one dynamic [[Mesh]] with the triangles
-(a fan around $x^*$, two per quad), their edges as line pairs (ring segments, spokes,
+(a fan around $v^*$, two per quad), their edges as line pairs (ring segments, spokes,
 the quads' diagonals) and every vertex as a point; the last ring of points doubles as
 the boundary loop. `render`: the bead, then the fill, the edges (`meshFade`), the
 boundary and the vertices as round points, with no depth writes on the patch.
@@ -201,7 +201,7 @@ view. While $r$ is shown, the $W^s_{\mathrm{loc}}$ label fades out.
   top-right; $r_{new}$; the $O$, $W^s_{\mathrm{loc}}(O)$, $r$, $r^\pm$,
   $\mathcal{F}_r$, $b_r(\tau = \dots)$ and
   $\|b_r(\tau) - r\|$ labels.
-- [[Camera]] — orbit around $x^*$; `easeOrbitTo` for the recenter / reframe / zoom
+- [[Camera]] — orbit around $v^*$; `easeOrbitTo` for the recenter / reframe / zoom
   onto $r$; position, front and `up` re-placed in the sim's own orbit frame.
 - [[App]] — handoff in and out (`handoff`, `requestSwitch`, `hasSim`), screenshots,
   `kRecenterEaseSeconds`.

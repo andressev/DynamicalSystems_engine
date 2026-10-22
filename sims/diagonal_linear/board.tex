@@ -1,0 +1,11 @@
+% L shows this card, PageDown / PageUp turn the pages.
+% One formula per line (math mode, prose as \text{...}), blank line = space, --- = new page.
+\dot v = A v, \qquad A = \begin{pmatrix} \lambda_1 & 0 & 0 \\ 0 & \lambda_2 & 0 \\ 0 & 0 & \lambda_3 \end{pmatrix}
+
+\varphi^t(v_0) = e^{At} v_0 = \left( e^{\lambda_1 t} x_0,\ e^{\lambda_2 t} y_0,\ e^{\lambda_3 t} z_0 \right)
+---
+E^s = \operatorname{span}\{ e_i : \lambda_i < 0 \}
+E^u = \operatorname{span}\{ e_i : \lambda_i > 0 \}
+E^c = \operatorname{span}\{ e_i : \lambda_i = 0 \}
+
+\text{each is invariant: } v_0 \in E^s \Rightarrow \varphi^t(v_0) \in E^s
