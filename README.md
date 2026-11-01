@@ -3,8 +3,7 @@
 An engine for exploring mathematics visually — complex functions on the Riemann sphere,
 raymarched implicit surfaces `f(x,y,z) = c`, vector fields and their flows, and the
 local and global dynamics of the Lorenz system (linearization, Hartman–Grobman,
-stable and unstable manifolds) — built on OpenGL, with CUDA interop for GPU compute on
-the roadmap.
+stable and unstable manifolds) — built on OpenGL.
 Simulations ("sims") are self-contained modules on top of a small engine
 library, and can be run all together from an explorer app or as standalone executables.
 
